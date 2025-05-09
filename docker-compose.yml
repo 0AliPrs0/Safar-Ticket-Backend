@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   db:
-    image: hub.arvancloud.ir/library/mysql:8.0
+    image: mysql:8.0
     environment:
       MYSQL_DATABASE: safarticket
       MYSQL_ROOT_PASSWORD: root
@@ -12,15 +12,15 @@ services:
       - db_data:/var/lib/mysql
 
   redis:
-    image: hub.arvancloud.ir/library/redis:latest
+    image: redis:latest
     ports:
       - "6379:6379"
 
   backend:
-    build: ./backend
+    build: ./SafarTicket
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
-      - ./backend:/code
+      - ./SafarTicket:/code
     ports:
       - "8000:8000"
     depends_on:
@@ -29,3 +29,4 @@ services:
 
 volumes:
   db_data:
+
