@@ -61,13 +61,14 @@ WSGI_APPLICATION = 'SafarTicket.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'safarticket',
+        'NAME': 'db',  
         'USER': 'root',
-        'PASSWORD': 'root',
-        'HOST': 'db',
-        'PORT': '3306',
+        'PASSWORD': 'Aliprs2005',
+        'HOST': 'host.docker.internal', 
+        'PORT': '3306',  
     }
 }
+
 
 CACHES = {
     "default": {
