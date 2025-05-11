@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'API',
 ]
 
 MIDDLEWARE = [
@@ -63,7 +64,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'safarticket',
         'USER': 'root',
-        'PASSWORD': 'root',
+        'PASSWORD': 'Aliprs2005',
         'HOST': 'db',
         'PORT': '3306',
     }

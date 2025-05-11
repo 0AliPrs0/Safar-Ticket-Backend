@@ -1,15 +1,14 @@
-version: "3.9"
-
 services:
   db:
     image: mysql:8.0
     environment:
       MYSQL_DATABASE: safarticket
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: Aliprs2005
     ports:
       - "3306:3306"
     volumes:
       - db_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
   redis:
     image: redis:latest
@@ -29,4 +28,3 @@ services:
 
 volumes:
   db_data:
-

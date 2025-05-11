@@ -1,5 +1,7 @@
-Django>=4.2
+﻿Django>=4.2
 djangorestframework
 mysqlclient
 PyJWT
 django-redis
+pymysql
+cryptography>=3.0
