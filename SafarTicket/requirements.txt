@@ -1,7 +1,8 @@
 ﻿Django>=4.2
 djangorestframework
 mysqlclient
+pymysql
 PyJWT
 django-redis
-pymysql
 cryptography>=3.0
+mysql-connector-python

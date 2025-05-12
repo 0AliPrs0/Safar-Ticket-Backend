@@ -70,6 +70,11 @@ DATABASES = {
     }
 }
 
+JWT_SECRET = 'your-secret-key'
+JWT_ALGORITHM = 'HS256'
+JWT_EXP_DELTA_SECONDS = 3600
+
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
