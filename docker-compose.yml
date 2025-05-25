@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   db:
     image: mysql:8.0
@@ -25,6 +27,13 @@ services:
     depends_on:
       - db
       - redis
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    environment:
+      - EMAIL_USER=safarticket00@gmail.com
+      - EMAIL_PASS=jgtivimugkolefyi
+      - DJANGO_SETTINGS_MODULE=SafarTicket.settings
 
 volumes:
   db_data:

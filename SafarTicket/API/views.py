@@ -6,8 +6,10 @@ import redis
 from rest_framework.views import APIView
 from rest_framework.response import Response
 import mysql.connector
+from .utils.email_utils import send_otp_email
 from .serializers import UserSerializer
 from .jwt import generate_jwt
+import datetime
 
 class CityListView(View):
     def get(self, request):
@@ -46,14 +48,18 @@ class SendOtpAPIView(APIView):
     def post(self, request):
         email = request.data.get('email')
         if not email:
-            return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Email is required'}, status=400)
 
         otp = str(random.randint(100000, 999999))
         redis_client.setex(f"otp:{email}", 300, otp)
 
-        print(f"[OTP] Sent to {email}: {otp}")  # شبیه‌سازی ارسال
+        try:
+            send_otp_email(email, otp)
+        except Exception:
+            return Response({'error': 'Failed to send email. Try again later.'}, status=500)
 
-        return Response({'message': 'OTP sent to email'}, status=status.HTTP_200_OK)
+        return Response({'message': 'OTP sent to your email'}, status=200)
+
 
 
 class VerifyOtpAPIView(APIView):
@@ -65,10 +71,9 @@ class VerifyOtpAPIView(APIView):
             return Response({'error': 'Email and OTP are required'}, status=400)
 
         saved_otp = redis_client.get(f"otp:{email}")
-        if saved_otp is None or otp != saved_otp.decode():
+        if not saved_otp or saved_otp.decode() != otp:
             return Response({'error': 'Invalid or expired OTP'}, status=400)
 
-        # اتصال به MySQL
         conn = mysql.connector.connect(
             host="db",
             user="root",
@@ -77,20 +82,37 @@ class VerifyOtpAPIView(APIView):
         )
         cursor = conn.cursor(dictionary=True)
 
-        cursor.execute("SELECT user_id, first_name, last_name, email, phone_number, user_type, city_id, registration_date, account_status FROM User WHERE email = %s", (email,))
+        cursor.execute("SELECT * FROM User WHERE email = %s", (email,))
         user_data = cursor.fetchone()
+
+        if not user_data:
+            registration_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute("""
+                INSERT INTO User (first_name, last_name, email, user_type, city_id, registration_date, account_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, ("", "", email, "passenger", 1, registration_date, "active"))
+
+            conn.commit()
+            user_id = cursor.lastrowid
+            user_data = {
+                "user_id": user_id,
+                "first_name": "",
+                "last_name": "",
+                "email": email,
+                "phone_number": None,
+                "user_type": "passenger",
+                "city_id": 1,
+                "registration_date": registration_date,
+                "account_status": "active"
+            }
 
         cursor.close()
         conn.close()
 
-        if not user_data:
-            return Response({'error': 'User not found'}, status=404)
-
         token = generate_jwt({'user_id': user_data['user_id'], 'email': user_data['email']})
-
         serializer = UserSerializer(user_data)
 
         return Response({
             'token': token,
             'user': serializer.data
-        })
+        }, status=200)
