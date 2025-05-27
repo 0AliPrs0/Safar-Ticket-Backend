@@ -34,6 +34,8 @@ services:
       - EMAIL_USER=safarticket00@gmail.com
       - EMAIL_PASS=jgtivimugkolefyi
       - DJANGO_SETTINGS_MODULE=SafarTicket.settings
+      - JWT_SECRET_KEY=JWT_SECRET_KEY=jsd8@wF8#Lxq2kPmZ3!vQ1eL*Gd94Tpw
+
 
 volumes:
   db_data:

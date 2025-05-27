@@ -5,11 +5,11 @@ import random
 import redis
 from rest_framework.views import APIView
 from rest_framework.response import Response
-import mysql.connector
 from .utils.email_utils import send_otp_email
 from .serializers import UserSerializer
-from .jwt import generate_jwt
 import datetime
+import hashlib
+from .utils.jwt import generate_jwt 
 
 class CityListView(View):
     def get(self, request):
@@ -74,24 +74,24 @@ class VerifyOtpAPIView(APIView):
         if not saved_otp or saved_otp.decode() != otp:
             return Response({'error': 'Invalid or expired OTP'}, status=400)
 
-        conn = mysql.connector.connect(
+        conn = MySQLdb.connect(
             host="db",
             user="root",
             password="Aliprs2005",
-            database="safarticket"
+            database="safarticket",
+            port=3306
         )
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
 
-        cursor.execute("SELECT * FROM User WHERE email = %s", (email,))
-        user_data = cursor.fetchone()
+        cursor.execute("SELECT user_id, first_name, last_name, email, phone_number, user_type, city_id, registration_date, account_status FROM User WHERE email = %s", (email,))
+        row = cursor.fetchone()
 
-        if not user_data:
+        if not row:
             registration_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             cursor.execute("""
                 INSERT INTO User (first_name, last_name, email, user_type, city_id, registration_date, account_status)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, ("", "", email, "passenger", 1, registration_date, "active"))
-
+            """, ("", "", email, "customer", 1, registration_date, "active"))
             conn.commit()
             user_id = cursor.lastrowid
             user_data = {
@@ -100,10 +100,22 @@ class VerifyOtpAPIView(APIView):
                 "last_name": "",
                 "email": email,
                 "phone_number": None,
-                "user_type": "passenger",
+                "user_type": "customer",
                 "city_id": 1,
                 "registration_date": registration_date,
                 "account_status": "active"
+            }
+        else:
+            user_data = {
+                "user_id": row[0],
+                "first_name": row[1],
+                "last_name": row[2],
+                "email": row[3],
+                "phone_number": row[4],
+                "user_type": row[5],
+                "city_id": row[6],
+                "registration_date": row[7],
+                "account_status": row[8]
             }
 
         cursor.close()
@@ -116,3 +128,65 @@ class VerifyOtpAPIView(APIView):
             'token': token,
             'user': serializer.data
         }, status=200)
+     
+
+class SignupUserAPIView(APIView):
+    def post(self, request):
+        data = request.data
+        first_name = data.get('first_name')
+        last_name = data.get('last_name')
+        email = data.get('email')
+        phone_number = data.get('phone_number')
+        password = data.get('password')
+        city_id = data.get('city_id', 1)
+
+        if not all([first_name, last_name, email, phone_number, password]):
+            return Response({'error': 'All fields are required'}, status=400)
+
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+        registration_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        try:
+            conn = MySQLdb.connect(
+                host="db",
+                user="root",
+                password="Aliprs2005",
+                database="safarticket",
+                port=3306
+            )
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT user_id FROM User WHERE email = %s", (email,))
+            if cursor.fetchone():
+                return Response({'error': 'User with this email already exists'}, status=400)
+
+            cursor.execute("""
+                INSERT INTO User (first_name, last_name, email, phone_number, password_hash, user_type, city_id, registration_date, account_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (first_name, last_name, email, phone_number, password_hash, "customer", city_id, registration_date, "active"))
+
+            conn.commit()
+            user_id = cursor.lastrowid
+            cursor.close()
+            conn.close()
+
+            token = generate_jwt({'user_id': user_id, 'email': email})
+
+            return Response({
+                'message': 'User registered successfully',
+                'token': token,
+                'user': {
+                    'user_id': user_id,
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'email': email,
+                    'phone_number': phone_number,
+                    'user_type': 'customer',
+                    'city_id': city_id,
+                    'registration_date': registration_date,
+                    'account_status': 'active'
+                }
+            }, status=201)
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)

@@ -85,6 +85,9 @@ CACHES = {
     }
 }
 
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'fallback_secret')
+
+
 AUTH_PASSWORD_VALIDATORS = []
 
 LANGUAGE_CODE = 'en-us'
