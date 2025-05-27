@@ -8,4 +8,5 @@ urlpatterns = [
     path('verify-otp/', VerifyOtpAPIView.as_view()),
     path('signup/', SignupUserAPIView.as_view()),
     path('ticket/<int:ticket_id>/', TicketDetailAPIView.as_view()),
+    path('profile/update/', ProfileUserUpdateAPIView.as_view()),
 ]
