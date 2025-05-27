@@ -25,6 +25,9 @@
 
     ALTER TABLE User
         ADD COLUMN city_id BIGINT NOT NULL;
+
+    ALTER TABLE User
+        ADD COLUMN birth_date Date NULL;
         
     ALTER TABLE User
         ADD CONSTRAINT fk_city
@@ -256,6 +259,20 @@
     ('Isabel', 'White', 'isabel.white@example.com', '0123456789', 'SUPPORT', 30, 'hashed_password_10', NOW(), 'ACTIVE'),
     ('Ali', 'Prs', 'ali@gmail.com', '9032948208', 'CUSTOMER', 32, '6bce8c09ce07cd1114acfdf2caa22202a403c4a2b83b27233f0705c54676bed9', NOW(), 'ACTIVE'),
     ('Mehdi', 'Salman', 'mehdi@gmail.com', '9938634096', 'CUSTOMER', 34, 'a956be05d5b1a7738549eb274626b01e663bf30111994d91e2384ddbb0dc292c', NOW(), 'ACTIVE');
+
+    UPDATE User SET birth_date = '1995-03-10' WHERE user_id = 1;
+    UPDATE User SET birth_date = '1988-07-22' WHERE user_id = 2;
+    UPDATE User SET birth_date = '1992-11-15' WHERE user_id = 3;
+    UPDATE User SET birth_date = '1990-05-30' WHERE user_id = 4;
+    UPDATE User SET birth_date = '1985-09-18' WHERE user_id = 5;
+    UPDATE User SET birth_date = '1998-12-05' WHERE user_id = 6;
+    UPDATE User SET birth_date = '1993-04-25' WHERE user_id = 7;
+    UPDATE User SET birth_date = '1987-08-14' WHERE user_id = 8;
+    UPDATE User SET birth_date = '1991-01-20' WHERE user_id = 9;
+    UPDATE User SET birth_date = '1994-06-08' WHERE user_id = 10;
+    UPDATE User SET birth_date = '1989-10-12' WHERE user_id = 11;
+    UPDATE User SET birth_date = '1997-02-28' WHERE user_id = 12;
+    UPDATE User SET birth_date = '1996-07-03' WHERE user_id = 13;
 
     INSERT INTO Terminal (city_id, terminal_name, terminal_type) VALUES
     (1, 'Imam Khomeini International Airport', 'airport'),
