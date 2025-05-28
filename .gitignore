@@ -1,0 +1,16 @@
+mysql-data/
+
+venv/
+SafarTicket/venv/ # اگر venv داخل پوشه SafarTicket هم دارید
+
+
+__pycache__/
+*.pyc
+
+
+*.log
+
+
+.vscode/
+.idea/
+.DS_Store
