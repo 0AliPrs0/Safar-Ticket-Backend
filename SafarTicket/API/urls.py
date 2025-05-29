@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import CityListView, SendOtpAPIView, VerifyOtpAPIView, SignupUserAPIView, TicketDetailAPIView, ProfileUserUpdateAPIView, SearchTicketsAPIView, TicketPaymentAPIView, UserBookingsAPIView
+from .views import CityListView, SendOtpAPIView, VerifyOtpAPIView, SignupUserAPIView, TicketDetailAPIView, ProfileUserUpdateAPIView, SearchTicketsAPIView, TicketPaymentAPIView, UserBookingsAPIView, TicketCancelAPIView
 
 
 urlpatterns = [
@@ -12,4 +12,5 @@ urlpatterns = [
     path('search-tickets/', SearchTicketsAPIView.as_view()), 
     path('payment-ticket/', TicketPaymentAPIView.as_view()),
     path('user-booking/', UserBookingsAPIView.as_view()),
+    path('cancel-ticket/', TicketCancelAPIView.as_view()),
 ]

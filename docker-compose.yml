@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: mysql:8.0
@@ -45,4 +43,4 @@ services:
       - JWT_SECRET_KEY=JWT_SECRET_KEY=jsd8@wF8#Lxq2kPmZ3!vQ1eL*Gd94Tpw
 
 volumes:
-  db_data: # تعریف والیوم برای دیتابیس برای نگهداری دائمی داده‌ها
+  db_data: 

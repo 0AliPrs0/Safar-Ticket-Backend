@@ -582,3 +582,68 @@ class UserBookingsAPIView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=500)
 
+
+class TicketCancelAPIView(APIView):
+    def post(self, request):
+        reservation_id = request.data.get("reservation_id")
+
+        if not reservation_id:
+            return Response({"error": "reservation_id is required"}, status=400)
+
+        try:
+            conn = MySQLdb.connect(
+                host="db",
+                user="root",
+                password="Aliprs2005",
+                database="safarticket",
+                port=3306
+            )
+            cursor = conn.cursor()
+
+            # گرفتن اطلاعات رزرو
+            cursor.execute("SELECT status, user_id, ticket_id FROM Reservation WHERE reservation_id = %s", (reservation_id,))
+            reservation = cursor.fetchone()
+            if not reservation:
+                return Response({"error": "Reservation not found"}, status=404)
+
+            status, user_id, ticket_id = reservation
+            if status != 'paid':
+                return Response({"error": "Only paid reservations can be canceled"}, status=400)
+
+            # گرفتن travel_id از ticket
+            cursor.execute("SELECT travel_id FROM Ticket WHERE ticket_id = %s", (ticket_id,))
+            travel = cursor.fetchone()
+            if not travel:
+                return Response({"error": "Ticket or related travel not found"}, status=404)
+            travel_id = travel[0]
+
+            # گرفتن user_id مربوط به ادمینی که اسمش 'admin' هست
+            cursor.execute("SELECT user_id FROM User WHERE email = 'admin@gmail.com' LIMIT 1")
+            admin = cursor.fetchone()
+            if not admin:
+                return Response({"error": "Admin user not found"}, status=500)
+            admin_user_id = admin[0]
+
+            # کنسل‌کردن رزرو
+            cursor.execute("UPDATE Reservation SET status = 'canceled' WHERE reservation_id = %s", (reservation_id,))
+
+            # افزایش ظرفیت در سفر
+            cursor.execute("UPDATE Travel SET remaining_capacity = remaining_capacity + 1 WHERE travel_id = %s", (travel_id,))
+
+            # تغییر وضعیت پرداخت
+            cursor.execute("UPDATE Payment SET payment_status = 'failed' WHERE reservation_id = %s", (reservation_id,))
+
+            # ثبت در جدول ReservationChange با user_id ادمین
+            cursor.execute("""
+                INSERT INTO ReservationChange (reservation_id, support_id, prev_status, next_status)
+                VALUES (%s, %s, 'paid', 'canceled')
+            """, (reservation_id, admin_user_id))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            return Response({"message": "Ticket canceled and refund initiated"})
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
