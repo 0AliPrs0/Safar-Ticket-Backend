@@ -457,3 +457,65 @@ class SearchTicketsAPIView(APIView):
                 cursor.close()
             if db:
                 db.close()
+
+
+class TicketPaymentAPIView(APIView):
+    def post(self, request):
+        data = request.data
+        user_id = data.get('user_id')
+        reservation_id = data.get('reservation_id')
+        payment_method = data.get('payment_method')
+
+        if not all([user_id, reservation_id, payment_method]):
+            return Response({"error": "Missing required fields"}, status=400)
+
+        try:
+            conn = MySQLdb.connect(
+                host="db",
+                user="root",
+                password="Aliprs2005",
+                database="safarticket",
+                port=3306
+            )
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT r.status, t.ticket_id, tr.price
+                FROM Reservation r
+                JOIN Ticket t ON r.ticket_id = t.ticket_id
+                JOIN Travel tr ON t.travel_id = tr.travel_id
+                WHERE r.reservation_id = %s AND r.user_id = %s
+            """, (reservation_id, user_id))
+            reservation = cursor.fetchone()
+
+            if not reservation:
+                return Response({"error": "Reservation not found"}, status=404)
+
+            status, ticket_id, amount = reservation
+
+            if status != 'reserved':
+                return Response({"error": "Reservation is not in a payable state"}, status=400)
+
+            cursor.execute("""
+                INSERT INTO Payment (user_id, reservation_id, amount, payment_method, payment_status)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (user_id, reservation_id, amount, payment_method, 'completed'))
+
+            cursor.execute("""
+                UPDATE Reservation
+                SET status = 'paid'
+                WHERE reservation_id = %s
+            """, (reservation_id,))
+
+            conn.commit()
+
+            redis_client.delete(f"user_profile:{user_id}")
+            redis_client.delete(f"reservation:{reservation_id}")
+
+            cursor.close()
+            conn.close()
+
+            return Response({"message": "Payment completed and reservation confirmed."})
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)

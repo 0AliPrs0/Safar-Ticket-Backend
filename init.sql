@@ -696,6 +696,13 @@
     SET Reservation.status = 'paid'
     WHERE Reservation.status = 'reserved' AND Reservation.reservation_id < 47;
 
+    INSERT INTO Reservation (user_id, ticket_id, status, reservation_time, expiration_time)
+    VALUES
+    (11, 7, 'reserved', NOW(), DATE_ADD(NOW(), INTERVAL 1 DAY)),
+    (12, 9, 'reserved', NOW(), DATE_ADD(NOW(), INTERVAL 1 DAY)),
+    (11, 1, 'reserved', NOW(), DATE_ADD(NOW(), INTERVAL 1 DAY));
+
+
 
     INSERT INTO Payment (user_id, reservation_id, amount, payment_method, payment_status, payment_date)
     VALUES
