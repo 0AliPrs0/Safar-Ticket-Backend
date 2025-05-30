@@ -163,6 +163,9 @@
         FOREIGN KEY (user_id) REFERENCES User(user_id) ON DELETE CASCADE,
         FOREIGN KEY (ticket_id) REFERENCES Ticket(ticket_id) ON DELETE CASCADE
     );
+    
+    ALTER TABLE Report ADD COLUMN response_text TEXT NULL;
+
 
     CREATE TABLE ReservationChange (
         reservation_change_id BIGINT PRIMARY KEY AUTO_INCREMENT,
