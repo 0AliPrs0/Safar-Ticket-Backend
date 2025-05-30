@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import CityListView, SendOtpAPIView, VerifyOtpAPIView, SignupUserAPIView, TicketDetailAPIView, ProfileUserUpdateAPIView, SearchTicketsAPIView, TicketPaymentAPIView, UserBookingsAPIView, TicketCancelAPIView, AdminManageReservationAPIView, TicketReportAPIView, AdminReviewReportAPIView
+from .views import CityListView, SendOtpAPIView, VerifyOtpAPIView, SignupUserAPIView, TicketDetailAPIView, ProfileUserUpdateAPIView, SearchTicketsAPIView, TicketPaymentAPIView, UserBookingsAPIView, TicketCancelAPIView, AdminManageReservationAPIView, TicketReportAPIView, AdminReviewReportAPIView, UserReservationsAPIView, ReserveTicketAPIView
 
 
 urlpatterns = [
@@ -16,4 +16,6 @@ urlpatterns = [
     path('ticket-management/', AdminManageReservationAPIView.as_view()),
     path('report-ticket/', TicketReportAPIView.as_view()),
     path('review-report/', AdminReviewReportAPIView.as_view()),
+    path('reserve-ticket/', ReserveTicketAPIView.as_view()),
+    path('reservation/', UserReservationsAPIView.as_view()),
 ]

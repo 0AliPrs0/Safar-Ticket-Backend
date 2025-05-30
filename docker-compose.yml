@@ -42,5 +42,18 @@ services:
       - DJANGO_SETTINGS_MODULE=SafarTicket.settings
       - JWT_SECRET_KEY=JWT_SECRET_KEY=jsd8@wF8#Lxq2kPmZ3!vQ1eL*Gd94Tpw
 
+  cron:
+    build: ./SafarTicket  
+    command: >
+      sh -c "crontab /code/cron/cronjob && cron -f"
+    volumes:
+      - ./SafarTicket:/code
+    depends_on:
+      - db
+      - backend
+    environment:
+      - DJANGO_SETTINGS_MODULE=SafarTicket.settings
+
+
 volumes:
   db_data: 
