@@ -600,7 +600,6 @@ class TicketCancelAPIView(APIView):
             )
             cursor = conn.cursor()
 
-            # گرفتن اطلاعات رزرو
             cursor.execute("SELECT status, user_id, ticket_id FROM Reservation WHERE reservation_id = %s", (reservation_id,))
             reservation = cursor.fetchone()
             if not reservation:
@@ -610,30 +609,24 @@ class TicketCancelAPIView(APIView):
             if status != 'paid':
                 return Response({"error": "Only paid reservations can be canceled"}, status=400)
 
-            # گرفتن travel_id از ticket
             cursor.execute("SELECT travel_id FROM Ticket WHERE ticket_id = %s", (ticket_id,))
             travel = cursor.fetchone()
             if not travel:
                 return Response({"error": "Ticket or related travel not found"}, status=404)
             travel_id = travel[0]
 
-            # گرفتن user_id مربوط به ادمینی که اسمش 'admin' هست
             cursor.execute("SELECT user_id FROM User WHERE email = 'admin@gmail.com' LIMIT 1")
             admin = cursor.fetchone()
             if not admin:
                 return Response({"error": "Admin user not found"}, status=500)
             admin_user_id = admin[0]
 
-            # کنسل‌کردن رزرو
             cursor.execute("UPDATE Reservation SET status = 'canceled' WHERE reservation_id = %s", (reservation_id,))
 
-            # افزایش ظرفیت در سفر
             cursor.execute("UPDATE Travel SET remaining_capacity = remaining_capacity + 1 WHERE travel_id = %s", (travel_id,))
 
-            # تغییر وضعیت پرداخت
             cursor.execute("UPDATE Payment SET payment_status = 'failed' WHERE reservation_id = %s", (reservation_id,))
 
-            # ثبت در جدول ReservationChange با user_id ادمین
             cursor.execute("""
                 INSERT INTO ReservationChange (reservation_id, support_id, prev_status, next_status)
                 VALUES (%s, %s, 'paid', 'canceled')
@@ -644,6 +637,79 @@ class TicketCancelAPIView(APIView):
             conn.close()
 
             return Response({"message": "Ticket canceled and refund initiated"})
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+
+class AdminManageReservationAPIView(APIView):
+    def post(self, request):
+        admin_user_id = request.data.get("admin_id")
+        reservation_id = request.data.get("reservation_id")
+        action = request.data.get("action")
+        new_data = request.data.get("new_data", {})
+
+        if not reservation_id or not action:
+            return Response({"error": "admin_id and reservation_id and action are required"}, status=400)
+
+        try:
+            conn = MySQLdb.connect(
+                host="db",
+                user="root",
+                password="Aliprs2005",
+                database="safarticket",
+                port=3306
+            )
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT user_type FROM User WHERE user_id = %s", (admin_user_id,))
+            user_type = cursor.fetchone()
+
+            if not user_type or user_type[0] != 'ADMIN':
+                return Response({"error": "Admin user not found"}, status=403)
+ 
+
+            cursor.execute("SELECT status FROM Reservation WHERE reservation_id = %s", (reservation_id,))
+            reservation = cursor.fetchone()
+            if not reservation:
+                return Response({"error": "Reservation not found"}, status=404)
+            current_status = reservation[0]
+
+
+            if action == "approve":
+                if current_status != 'reserved':
+                    return Response({"error": "Only reserved reservations can be approved (changed to paid)"}, status=400)
+                cursor.execute("UPDATE Reservation SET status = 'paid' WHERE reservation_id = %s", (reservation_id,))
+                next_status = 'paid'
+
+            elif action == "cancel":
+                if current_status == 'canceled':
+                    return Response({"error": "Reservation is already canceled"}, status=400)
+                cursor.execute("UPDATE Reservation SET status = 'canceled' WHERE reservation_id = %s", (reservation_id,))
+                next_status = 'canceled'
+
+            elif action == "modify":
+                if "expiration_time" not in new_data:
+                    return Response({"error": "Only 'expiration_time' field is allowed for modification"}, status=400)
+                cursor.execute("UPDATE Reservation SET expiration_time = %s WHERE reservation_id = %s", (
+                    new_data["expiration_time"], reservation_id
+                ))
+                next_status = current_status
+
+            else:
+                return Response({"error": "Invalid action"}, status=400)
+            
+            if action == 'approve' or action == 'cancel':
+                cursor.execute("""
+                    INSERT INTO ReservationChange (reservation_id, support_id, prev_status, next_status)
+                    VALUES (%s, %s, %s, %s)
+                """, (reservation_id, admin_user_id, current_status, next_status))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            return Response({"message": f"Reservation {action} successful"})
 
         except Exception as e:
             return Response({"error": str(e)}, status=500)
