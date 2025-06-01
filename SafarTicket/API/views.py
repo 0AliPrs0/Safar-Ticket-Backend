@@ -624,12 +624,110 @@ class TicketCancelAPIView(APIView):
                 return Response({"error": "Admin user not found"}, status=500)
             admin_user_id = admin[0]
 
+            cursor.execute("""
+                SELECT t.departure_time, p.amount 
+                FROM Travel t
+                JOIN Ticket tk ON t.travel_id = tk.travel_id
+                JOIN Reservation r ON r.ticket_id = tk.ticket_id
+                JOIN Payment p ON p.reservation_id = r.reservation_id
+                WHERE r.reservation_id = %s
+            """, (reservation_id,))
+            travel_info = cursor.fetchone()
+            if not travel_info:
+                return Response({"error": "Travel or Payment data not found"}, status=404)
+
+            departure_time, amount_paid = travel_info
+
+            now = datetime.utcnow()
+            remaining_time = departure_time - now
+
+            if remaining_time <= timedelta(hours=1):
+                penalty_percent = 90
+            elif remaining_time <= timedelta(hours=3):
+                penalty_percent = 50
+            else:
+                penalty_percent = 10
+
+            penalty_amount = round(amount_paid * penalty_percent / 100)
+            refund_amount = amount_paid - penalty_amount
+
+            cursor.execute("UPDATE User SET wallet = wallet + %s WHERE user_id = %s", (refund_amount, user_id))
             cursor.execute("UPDATE Reservation SET status = 'canceled' WHERE reservation_id = %s", (reservation_id,))
-
             cursor.execute("UPDATE Travel SET remaining_capacity = remaining_capacity + 1 WHERE travel_id = %s", (travel_id,))
-
             cursor.execute("UPDATE Payment SET payment_status = 'failed' WHERE reservation_id = %s", (reservation_id,))
+            cursor.execute("""
+                INSERT INTO ReservationChange (reservation_id, support_id, prev_status, next_status)
+                VALUES (%s, %s, 'paid', 'canceled')
+            """, (reservation_id, admin_user_id))
 
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            return Response({"message": "Ticket canceled and refund initiated"})
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+
+class TicketCancelAPIView(APIView):
+    def post(self, request):
+        reservation_id = request.data.get("reservation_id")
+
+        if not reservation_id:
+            return Response({"error": "reservation_id is required"}, status=400)
+
+        try:
+            conn = MySQLdb.connect(
+                host="db",
+                user="root",
+                password="Aliprs2005",
+                database="safarticket",
+                port=3306
+            )
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT status, user_id, ticket_id FROM Reservation WHERE reservation_id = %s", (reservation_id,))
+            reservation = cursor.fetchone()
+            if not reservation:
+                return Response({"error": "Reservation not found"}, status=404)
+
+            status, user_id, ticket_id = reservation
+            if status != 'paid':
+                return Response({"error": "Only paid reservations can be canceled"}, status=400)
+
+            cursor.execute("SELECT travel_id FROM Ticket WHERE ticket_id = %s", (ticket_id,))
+            travel = cursor.fetchone()
+            if not travel:
+                return Response({"error": "Ticket or related travel not found"}, status=404)
+            travel_id = travel[0]
+
+            cursor.execute("SELECT user_id FROM User WHERE email = 'admin@gmail.com' LIMIT 1")
+            admin = cursor.fetchone()
+            if not admin:
+                return Response({"error": "Admin user not found"}, status=500)
+            admin_user_id = admin[0]
+
+            cursor.execute("SELECT departure_time, price FROM Travel WHERE travel_id = %s", (travel_id,))
+            travel_info = cursor.fetchone()
+            departure_time, price = travel_info
+            now = datetime.utcnow()
+            remaining_time = departure_time - now
+
+            if remaining_time <= timedelta(hours=1):
+                penalty_percent = 90
+            elif remaining_time <= timedelta(hours=3):
+                penalty_percent = 50
+            else:
+                penalty_percent = 10
+
+            penalty_amount = round(price * penalty_percent / 100)
+            refund_amount = price - penalty_amount
+
+            cursor.execute("UPDATE Reservation SET status = 'canceled' WHERE reservation_id = %s", (reservation_id,))
+            cursor.execute("UPDATE Travel SET remaining_capacity = remaining_capacity + 1 WHERE travel_id = %s", (travel_id,))
+            cursor.execute("UPDATE Payment SET payment_status = 'refunded' WHERE reservation_id = %s", (reservation_id,))
+            cursor.execute("UPDATE User SET wallet = wallet + %s WHERE user_id = %s", (refund_amount, user_id))
             cursor.execute("""
                 INSERT INTO ReservationChange (reservation_id, support_id, prev_status, next_status)
                 VALUES (%s, %s, 'paid', 'canceled')
@@ -652,8 +750,8 @@ class AdminManageReservationAPIView(APIView):
         action = request.data.get("action")
         new_data = request.data.get("new_data", {})
 
-        if not reservation_id or not action:
-            return Response({"error": "admin_id and reservation_id and action are required"}, status=400)
+        if not all([admin_user_id, reservation_id, action]):
+            return Response({"error": "admin_id, reservation_id, and action are required"}, status=400)
 
         try:
             conn = MySQLdb.connect(
@@ -666,43 +764,76 @@ class AdminManageReservationAPIView(APIView):
             cursor = conn.cursor()
 
             cursor.execute("SELECT user_type FROM User WHERE user_id = %s", (admin_user_id,))
-            user_type = cursor.fetchone()
+            result = cursor.fetchone()
+            if not result or result[0] != 'ADMIN':
+                return Response({"error": "Only admins can perform this action"}, status=403)
 
-            if not user_type or user_type[0] != 'ADMIN':
-                return Response({"error": "Only admins can change reservations"}, status=403)
- 
-
-            cursor.execute("SELECT status FROM Reservation WHERE reservation_id = %s", (reservation_id,))
+            cursor.execute("""
+                SELECT status, user_id, ticket_id FROM Reservation WHERE reservation_id = %s
+            """, (reservation_id,))
             reservation = cursor.fetchone()
             if not reservation:
                 return Response({"error": "Reservation not found"}, status=404)
-            current_status = reservation[0]
 
+            current_status, user_id, ticket_id = reservation
+            next_status = current_status
 
             if action == "approve":
                 if current_status != 'reserved':
-                    return Response({"error": "Only reserved reservations can be approved (changed to paid)"}, status=400)
+                    return Response({"error": "Only reserved reservations can be approved"}, status=400)
                 cursor.execute("UPDATE Reservation SET status = 'paid' WHERE reservation_id = %s", (reservation_id,))
                 next_status = 'paid'
 
             elif action == "cancel":
                 if current_status == 'canceled':
                     return Response({"error": "Reservation is already canceled"}, status=400)
+
+                cursor.execute("SELECT travel_id FROM Ticket WHERE ticket_id = %s", (ticket_id,))
+                travel = cursor.fetchone()
+                if not travel:
+                    return Response({"error": "Travel not found"}, status=404)
+                travel_id = travel[0]
+
+                cursor.execute("SELECT departure_time, price FROM Travel WHERE travel_id = %s", (travel_id,))
+                travel_info = cursor.fetchone()
+                if not travel_info:
+                    return Response({"error": "Travel details not found"}, status=404)
+                departure_time, price = travel_info
+                now = datetime.utcnow()
+                remaining_time = departure_time - now
+
+                if remaining_time <= timedelta(hours=1):
+                    penalty_percent = 90
+                elif remaining_time <= timedelta(hours=3):
+                    penalty_percent = 50
+                else:
+                    penalty_percent = 10
+
+                penalty_amount = round(price * penalty_percent / 100)
+                refund_amount = price - penalty_amount
+
                 cursor.execute("UPDATE Reservation SET status = 'canceled' WHERE reservation_id = %s", (reservation_id,))
+                cursor.execute("UPDATE Travel SET remaining_capacity = remaining_capacity + 1 WHERE travel_id = %s", (travel_id,))
+                cursor.execute("UPDATE Payment SET payment_status = 'refunded' WHERE reservation_id = %s", (reservation_id,))
+                cursor.execute("UPDATE User SET wallet = wallet + %s WHERE user_id = %s", (refund_amount, user_id))
                 next_status = 'canceled'
 
             elif action == "modify":
                 if "expiration_time" not in new_data:
-                    return Response({"error": "Only 'expiration_time' field is allowed for modification"}, status=400)
-                cursor.execute("UPDATE Reservation SET expiration_time = %s WHERE reservation_id = %s", (
-                    new_data["expiration_time"], reservation_id
-                ))
+                    return Response({"error": "Only 'expiration_time' can be modified"}, status=400)
+                try:
+                    expiration_time = datetime.fromisoformat(new_data["expiration_time"])
+                except ValueError:
+                    return Response({"error": "Invalid expiration_time format. Use ISO 8601 format."}, status=400)
+                cursor.execute("""
+                    UPDATE Reservation SET expiration_time = %s WHERE reservation_id = %s
+                """, (expiration_time, reservation_id))
                 next_status = current_status
 
             else:
                 return Response({"error": "Invalid action"}, status=400)
-            
-            if action == 'approve' or action == 'cancel':
+
+            if action in ["approve", "cancel"]:
                 cursor.execute("""
                     INSERT INTO ReservationChange (reservation_id, support_id, prev_status, next_status)
                     VALUES (%s, %s, %s, %s)
@@ -716,7 +847,7 @@ class AdminManageReservationAPIView(APIView):
 
         except Exception as e:
             return Response({"error": str(e)}, status=500)
-
+        
 
 class TicketReportAPIView(APIView):
     def post(self, request):
@@ -901,4 +1032,61 @@ class UserReservationsAPIView(APIView):
             return Response({"error": str(e)}, status=500)
 
 
-            
+class PenaltyCheckAPIView(APIView):
+    def post(self, request):
+        reservation_id = request.data.get("reservation_id")
+        if not reservation_id:
+            return Response({"error": "reservation_id is required"}, status=400)
+
+        try:
+            conn = MySQLdb.connect(
+                host="db",
+                user="root",
+                password="Aliprs2005",
+                database="safarticket",
+                port=3306
+            )
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT r.status, t.travel_id, tr.departure_time, tr.price
+                FROM Reservation r
+                JOIN Ticket t ON r.ticket_id = t.ticket_id
+                JOIN Travel tr ON t.travel_id = tr.travel_id
+                WHERE r.reservation_id = %s
+            """, (reservation_id,))
+            result = cursor.fetchone()
+
+            if not result:
+                return Response({"error": "Reservation not found"}, status=404)
+
+            status, travel_id, departure_time, price = result
+
+            if status != "paid":
+                return Response({"error": "Only paid reservations have a penalty policy"}, status=400)
+
+            now = datetime.utcnow()
+            departure_dt = departure_time
+            remaining_time = departure_dt - now
+
+            if remaining_time <= timedelta(hours=1):
+                penalty_percent = 90
+            elif remaining_time <= timedelta(hours=3):
+                penalty_percent = 50
+            else:
+                penalty_percent = 10
+
+            penalty_amount = round(price * penalty_percent / 100)
+
+            cursor.close()
+            conn.close()
+
+            return Response({
+                "reservation_id": reservation_id,
+                "penalty_percent": penalty_percent,
+                "penalty_amount": penalty_amount,
+                "refund_amount": price - penalty_amount
+            })
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)        
