@@ -1301,15 +1301,15 @@
     INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (48, 32, 7);
     INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (48, 32, 8);
 
-    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 33, 1);
-    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 33, 2);
-    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 33, 3);
-    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 33, 4);
-    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 33, 5);
-    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 33, 6);
-    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 33, 7);
-    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 33, 8);
-    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 33, 9);
+    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 39, 1);
+    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 39, 2);
+    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 39, 3);
+    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 39, 4);
+    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 39, 5);
+    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 39, 6);
+    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 39, 7);
+    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 39, 8);
+    INSERT INTO Ticket (travel_id, vehicle_id, seat_number) VALUES (52, 39, 9);
 
 
     
