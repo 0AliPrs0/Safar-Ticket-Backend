@@ -1,66 +1,34 @@
 import MySQLdb
-from django.http import JsonResponse
-from django.views import View
-import random
-import redis 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from ..utils.email_utils import send_otp_email, send_payment_reminder_email 
-from ..serializers import UserSerializer 
 import datetime
-import hashlib 
-from ..utils.jwt import generate_jwt 
-from rest_framework.permissions import IsAuthenticated
+import redis
 import json
-from datetime import datetime, timedelta 
-
+from datetime import datetime, timedelta
 
 redis_client = redis.Redis(host='redis', port=6379, db=0)
-
-
 
 
 class SearchTicketsAPIView(APIView):
     def post(self, request):
         data = request.data
-        origin_city_id = data.get('origin_city_id')
-        destination_city_id = data.get('destination_city_id')
+        origin_city_name = data.get('origin_city_name')
+        destination_city_name = data.get('destination_city_name')
         travel_date_str = data.get('travel_date')
 
         transport_type = data.get('transport_type')
         min_price = data.get('min_price')
         max_price = data.get('max_price')
-        company_id = data.get('company_id')
+        company_name = data.get('company_name')
         travel_class = data.get('travel_class')
 
-        if not all([origin_city_id, destination_city_id, travel_date_str]):
-            return Response({'error': 'Origin city, destination city, and travel date are required in the request body.'}, status=400)
+        if not all([origin_city_name, destination_city_name, travel_date_str]):
+            return Response({'error': 'Origin city name, destination city name, and travel date are required in the request body.'}, status=400)
 
         try:
-            datetime.datetime.strptime(travel_date_str, '%Y-%m-%d').date()
+            datetime.strptime(travel_date_str, '%Y-%m-%d').date()
         except ValueError:
             return Response({'error': 'Invalid travel_date format. Use YYYY-MM-DD.'}, status=400)
-
-        cache_key_parts = [
-            f"search_tickets_post",
-            f"ocid_{origin_city_id}",
-            f"dcid_{destination_city_id}",
-            f"date_{travel_date_str}"
-        ]
-        if transport_type: cache_key_parts.append(f"tt_{transport_type}")
-        if min_price is not None: cache_key_parts.append(f"minp_{min_price}")
-        if max_price is not None: cache_key_parts.append(f"maxp_{max_price}")
-        if company_id: cache_key_parts.append(f"comp_{company_id}")
-        if travel_class: cache_key_parts.append(f"tc_{travel_class}")
-
-        cache_key = ":".join(cache_key_parts)
-
-        try:
-            cached_results = redis_client.get(cache_key)
-            if cached_results:
-                return Response(json.loads(cached_results), status=200)
-        except redis.exceptions.RedisError:
-            pass
 
         db = None
         cursor = None
@@ -74,6 +42,46 @@ class SearchTicketsAPIView(APIView):
                 cursorclass=MySQLdb.cursors.DictCursor
             )
             cursor = db.cursor()
+
+            cursor.execute("SELECT city_id FROM City WHERE city_name = %s", (origin_city_name,))
+            origin_city_result = cursor.fetchone()
+            if not origin_city_result:
+                return Response({"error": f"Origin city '{origin_city_name}' not found"}, status=404)
+            origin_city_id = origin_city_result["city_id"]
+
+            cursor.execute("SELECT city_id FROM City WHERE city_name = %s", (destination_city_name,))
+            destination_city_result = cursor.fetchone()
+            if not destination_city_result:
+                return Response({"error": f"Destination city '{destination_city_name}' not found"}, status=404)
+            destination_city_id = destination_city_result["city_id"]
+
+            transport_company_id = None
+            if company_name:
+                cursor.execute("SELECT transport_company_id FROM TransportCompany WHERE company_name = %s", (company_name,))
+                company_result = cursor.fetchone()
+                if not company_result:
+                    return Response({"error": f"Transport company '{company_name}' not found"}, status=404)
+                transport_company_id = company_result["transport_company_id"]
+
+            cache_key_parts = [
+                f"search_tickets_post",
+                f"ocid_{origin_city_id}",
+                f"dcid_{destination_city_id}",
+                f"date_{travel_date_str}"
+            ]
+            if transport_type: cache_key_parts.append(f"tt_{transport_type}")
+            if min_price is not None: cache_key_parts.append(f"minp_{min_price}")
+            if max_price is not None: cache_key_parts.append(f"maxp_{max_price}")
+            if transport_company_id: cache_key_parts.append(f"compid_{transport_company_id}")
+            if travel_class: cache_key_parts.append(f"tc_{travel_class}")
+            cache_key = ":".join(cache_key_parts)
+
+            try:
+                cached_results = redis_client.get(cache_key)
+                if cached_results:
+                    return Response(json.loads(cached_results), status=200)
+            except redis.exceptions.RedisError:
+                pass
 
             query_params = []
             base_query = """
@@ -112,6 +120,9 @@ class SearchTicketsAPIView(APIView):
             if transport_type:
                 base_query += " AND tr.transport_type = %s"
                 query_params.append(transport_type)
+            if transport_company_id:
+                base_query += " AND tr.transport_company_id = %s"
+                query_params.append(transport_company_id)
             if min_price is not None:
                 try:
                     base_query += " AND tr.price >= %s"
@@ -124,9 +135,6 @@ class SearchTicketsAPIView(APIView):
                     query_params.append(float(max_price))
                 except ValueError:
                     return Response({'error': 'Invalid max_price format. Must be a number.'}, status=400)
-            if company_id:
-                base_query += " AND tr.transport_company_id = %s"
-                query_params.append(company_id)
             if travel_class:
                 base_query += " AND tr.travel_class = %s"
                 query_params.append(travel_class)
@@ -138,15 +146,14 @@ class SearchTicketsAPIView(APIView):
 
             results = []
             for row in rows:
-                row['departure_time'] = row['departure_time'].isoformat() if isinstance(row.get('departure_time'), datetime.datetime) else str(row.get('departure_time'))
-                row['arrival_time'] = row['arrival_time'].isoformat() if isinstance(row.get('arrival_time'), datetime.datetime) else str(row.get('arrival_time'))
+                row['departure_time'] = row['departure_time'].isoformat() if isinstance(row.get('departure_time'), datetime) else str(row.get('departure_time'))
+                row['arrival_time'] = row['arrival_time'].isoformat() if isinstance(row.get('arrival_time'), datetime) else str(row.get('arrival_time'))
                 results.append(row)
 
             try:
-                redis_client.setex(cache_key, datetime.timedelta(minutes=15), json.dumps(results))
+                redis_client.setex(cache_key, timedelta(minutes=15), json.dumps(results))
             except redis.exceptions.RedisError:
                 pass
-
             return Response(results, status=200)
 
         except MySQLdb.Error as e:
