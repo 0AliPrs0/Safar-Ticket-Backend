@@ -1,23 +1,11 @@
 import MySQLdb
-from django.http import JsonResponse
-from django.views import View
-import random
-import redis 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from ..utils.email_utils import send_otp_email, send_payment_reminder_email 
-from ..serializers import UserSerializer 
 import datetime
-import hashlib 
-from ..utils.jwt import generate_jwt 
-from rest_framework.permissions import IsAuthenticated
+import redis
 import json
-from datetime import datetime, timedelta 
-
 
 redis_client = redis.Redis(host='redis', port=6379, db=0)
-
-
 
 class TicketPaymentAPIView(APIView):
     def post(self, request):
@@ -29,6 +17,8 @@ class TicketPaymentAPIView(APIView):
         if not all([user_id, reservation_id, payment_method]):
             return Response({"error": "Missing required fields"}, status=400)
 
+        conn = None
+        cursor = None
         try:
             conn = MySQLdb.connect(
                 host="db",
@@ -37,7 +27,9 @@ class TicketPaymentAPIView(APIView):
                 database="safarticket",
                 port=3306
             )
-            cursor = conn.cursor()
+            cursor = conn.cursor(MySQLdb.cursors.DictCursor)
+
+            conn.begin()
 
             cursor.execute("""
                 SELECT r.status, t.ticket_id, tr.price
@@ -49,21 +41,25 @@ class TicketPaymentAPIView(APIView):
             reservation = cursor.fetchone()
 
             if not reservation:
+                conn.rollback()
                 return Response({"error": "Reservation not found"}, status=404)
 
-            status, ticket_id, amount = reservation
+            status, ticket_id, amount = reservation["status"], reservation["ticket_id"], reservation["price"]
 
             if status != 'reserved':
+                conn.rollback()
                 return Response({"error": "Reservation is not in a payable state"}, status=400)
 
             if payment_method == 'wallet':
-                cursor.execute("SELECT wallet FROM User WHERE user_id = %s", (user_id,))
+                cursor.execute("SELECT wallet FROM User WHERE user_id = %s FOR UPDATE", (user_id,))
                 wallet = cursor.fetchone()
                 if not wallet:
+                    conn.rollback()
                     return Response({"error": "User not found"}, status=404)
-                current_balance = wallet[0]
-
+                
+                current_balance = wallet["wallet"]
                 if current_balance < amount:
+                    conn.rollback()
                     return Response({"error": "Insufficient wallet balance"}, status=400)
 
                 cursor.execute("UPDATE User SET wallet = wallet - %s WHERE user_id = %s", (amount, user_id))
@@ -73,21 +69,28 @@ class TicketPaymentAPIView(APIView):
                 VALUES (%s, %s, %s, %s, %s)
             """, (user_id, reservation_id, amount, payment_method, 'completed'))
 
-            cursor.execute("""
-                UPDATE Reservation
-                SET status = 'paid'
-                WHERE reservation_id = %s
-            """, (reservation_id,))
+            cursor.execute("UPDATE Reservation SET status = 'paid' WHERE reservation_id = %s", (reservation_id,))
 
             conn.commit()
 
-            redis_client.delete(f"user_profile:{user_id}")
-            redis_client.delete(f"reservation:{reservation_id}")
-
-            cursor.close()
-            conn.close()
+            try:
+                redis_client.delete(f"user_profile:{user_id}")
+                redis_client.delete(f"reservation:{reservation_id}")
+            except redis.exceptions.RedisError:
+                pass
 
             return Response({"message": "Payment completed and reservation confirmed."})
 
+        except MySQLdb.Error as e:
+            if conn:
+                conn.rollback()
+            return Response({"error": f"Database error: {str(e)}"}, status=500)
         except Exception as e:
+            if conn:
+                conn.rollback()
             return Response({"error": str(e)}, status=500)
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
