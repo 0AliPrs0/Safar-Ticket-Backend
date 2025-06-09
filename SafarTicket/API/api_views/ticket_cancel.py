@@ -1,24 +1,8 @@
 import MySQLdb
-from django.http import JsonResponse
-from django.views import View
-import random
-import redis 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from ..utils.email_utils import send_otp_email, send_payment_reminder_email 
-from ..serializers import UserSerializer 
 import datetime
-import hashlib 
-from ..utils.jwt import generate_jwt 
-from rest_framework.permissions import IsAuthenticated
-import json
-from datetime import datetime, timedelta 
-
-
-redis_client = redis.Redis(host='redis', port=6379, db=0)
-
-
-
+from datetime import datetime, timedelta
 
 class TicketCancelAPIView(APIView):
     def post(self, request):
@@ -27,6 +11,8 @@ class TicketCancelAPIView(APIView):
         if not reservation_id:
             return Response({"error": "reservation_id is required"}, status=400)
 
+        conn = None
+        cursor = None
         try:
             conn = MySQLdb.connect(
                 host="db",
@@ -35,44 +21,54 @@ class TicketCancelAPIView(APIView):
                 database="safarticket",
                 port=3306
             )
-            cursor = conn.cursor()
+            cursor = conn.cursor(MySQLdb.cursors.DictCursor)
 
-            cursor.execute("SELECT status, user_id, ticket_id FROM Reservation WHERE reservation_id = %s", (reservation_id,))
+            conn.begin()
+
+            cursor.execute("""
+                SELECT status, user_id, ticket_id FROM Reservation 
+                WHERE reservation_id = %s FOR UPDATE
+            """, (reservation_id,))
             reservation = cursor.fetchone()
+
             if not reservation:
+                conn.rollback()
                 return Response({"error": "Reservation not found"}, status=404)
 
-            status, user_id, ticket_id = reservation
+            status, user_id, ticket_id = reservation["status"], reservation["user_id"], reservation["ticket_id"]
             if status != 'paid':
-                return Response({"error": "Only paid reservations can be canceled"}, status=400)
+                conn.rollback()
+                return Response({"error": "Only paid reservations can be canceled by the user"}, status=400)
 
             cursor.execute("SELECT travel_id FROM Ticket WHERE ticket_id = %s", (ticket_id,))
             travel = cursor.fetchone()
             if not travel:
+                conn.rollback()
                 return Response({"error": "Ticket or related travel not found"}, status=404)
-            travel_id = travel[0]
+            travel_id = travel["travel_id"]
 
-            cursor.execute("SELECT user_id FROM User WHERE email = 'admin@gmail.com' LIMIT 1")
-            admin = cursor.fetchone()
-            if not admin:
-                return Response({"error": "Admin user not found"}, status=500)
-            admin_user_id = admin[0]
-
+            cursor.execute("SELECT user_id FROM User WHERE user_type = 'SUPPORT' ORDER BY RAND() LIMIT 1")
+            support_user = cursor.fetchone()
+            if not support_user:
+                conn.rollback()
+                return Response({"error": "No support user found to log this change"}, status=500)
+            support_user_id = support_user["user_id"]
+            
             cursor.execute("""
-                SELECT t.departure_time, p.amount 
-                FROM Travel t
-                JOIN Ticket tk ON t.travel_id = tk.travel_id
-                JOIN Reservation r ON r.ticket_id = tk.ticket_id
-                JOIN Payment p ON p.reservation_id = r.reservation_id
-                WHERE r.reservation_id = %s
-            """, (reservation_id,))
+                SELECT tr.departure_time, p.amount 
+                FROM Travel tr
+                LEFT JOIN Payment p ON p.reservation_id = %s
+                WHERE tr.travel_id = %s
+            """, (reservation_id, travel_id))
             travel_info = cursor.fetchone()
+
             if not travel_info:
+                conn.rollback()
                 return Response({"error": "Travel or Payment data not found"}, status=404)
 
-            departure_time, amount_paid = travel_info
+            departure_time, amount_paid = travel_info["departure_time"], travel_info["amount"]
 
-            now = datetime.utcnow()
+            now = datetime.now()
             remaining_time = departure_time - now
 
             if remaining_time <= timedelta(hours=1):
@@ -82,8 +78,8 @@ class TicketCancelAPIView(APIView):
             else:
                 penalty_percent = 10
 
-            penalty_amount = round(amount_paid * penalty_percent / 100)
-            refund_amount = amount_paid - penalty_amount
+            penalty_amount = round(float(amount_paid) * penalty_percent / 100)
+            refund_amount = float(amount_paid) - penalty_amount
 
             cursor.execute("UPDATE User SET wallet = wallet + %s WHERE user_id = %s", (refund_amount, user_id))
             cursor.execute("UPDATE Reservation SET status = 'canceled' WHERE reservation_id = %s", (reservation_id,))
@@ -92,13 +88,22 @@ class TicketCancelAPIView(APIView):
             cursor.execute("""
                 INSERT INTO ReservationChange (reservation_id, support_id, prev_status, next_status)
                 VALUES (%s, %s, 'paid', 'canceled')
-            """, (reservation_id, admin_user_id))
+            """, (reservation_id, support_user_id))
 
             conn.commit()
-            cursor.close()
-            conn.close()
-
+            
             return Response({"message": "Ticket canceled and refund initiated"})
 
+        except MySQLdb.Error as e:
+            if conn:
+                conn.rollback()
+            return Response({"error": f"Database error: {str(e)}"}, status=500)
         except Exception as e:
+            if conn:
+                conn.rollback()
             return Response({"error": str(e)}, status=500)
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
