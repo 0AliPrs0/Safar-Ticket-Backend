@@ -1,23 +1,9 @@
 import MySQLdb
-from django.http import JsonResponse
-from django.views import View
-import random
-import redis 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from ..utils.email_utils import send_otp_email, send_payment_reminder_email 
-from ..serializers import UserSerializer 
 import datetime
-import hashlib 
-from ..utils.jwt import generate_jwt 
-from rest_framework.permissions import IsAuthenticated
-import json
-from datetime import datetime, timedelta 
-
-
-redis_client = redis.Redis(host='redis', port=6379, db=0)
-
-
+import hashlib
+from ..utils.jwt import generate_jwt
 
 class SignupUserAPIView(APIView):
     def post(self, request):
@@ -27,23 +13,34 @@ class SignupUserAPIView(APIView):
         email = data.get('email')
         phone_number = data.get('phone_number')
         password = data.get('password')
-        city_id = data.get('city_id', 1)
+        city_name = data.get('city_name')
 
         if not all([first_name, last_name, email, phone_number, password]):
-            return Response({'error': 'All fields are required'}, status=400)
+            return Response({'error': 'All main fields (first_name, last_name, email, phone_number, password) are required'}, status=400)
 
         password_hash = hashlib.sha256(password.encode()).hexdigest()
         registration_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+        db = None
+        cursor = None
         try:
-            conn = MySQLdb.connect(
+            db = MySQLdb.connect(
                 host="db",
                 user="root",
                 password="Aliprs2005",
                 database="safarticket",
                 port=3306
             )
-            cursor = conn.cursor()
+            cursor = db.cursor()
+
+            city_id = 1
+            if city_name:
+                cursor.execute("SELECT city_id FROM City WHERE city_name = %s", (city_name,))
+                city_result = cursor.fetchone()
+                if city_result:
+                    city_id = city_result[0]
+                else:
+                    return Response({"error": f"City '{city_name}' not found. Please provide a valid city name."}, status=404)
 
             cursor.execute("SELECT user_id FROM User WHERE email = %s", (email,))
             if cursor.fetchone():
@@ -52,13 +49,11 @@ class SignupUserAPIView(APIView):
             cursor.execute("""
                 INSERT INTO User (first_name, last_name, email, phone_number, password_hash, user_type, city_id, registration_date, account_status)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (first_name, last_name, email, phone_number, password_hash, "customer", city_id, registration_date, "active"))
+            """, (first_name, last_name, email, phone_number, password_hash, "CUSTOMER", city_id, registration_date, "ACTIVE"))
 
-            conn.commit()
+            db.commit()
             user_id = cursor.lastrowid
-            cursor.close()
-            conn.close()
-
+            
             token = generate_jwt({'user_id': user_id, 'email': email})
 
             return Response({
@@ -70,12 +65,19 @@ class SignupUserAPIView(APIView):
                     'last_name': last_name,
                     'email': email,
                     'phone_number': phone_number,
-                    'user_type': 'customer',
+                    'user_type': 'CUSTOMER',
                     'city_id': city_id,
                     'registration_date': registration_date,
-                    'account_status': 'active'
+                    'account_status': 'ACTIVE'
                 }
             }, status=201)
 
+        except MySQLdb.Error as e:
+            return Response({'error': f"Database error: {str(e)}"}, status=500)
         except Exception as e:
             return Response({'error': str(e)}, status=500)
+        finally:
+            if cursor:
+                cursor.close()
+            if db:
+                db.close()
