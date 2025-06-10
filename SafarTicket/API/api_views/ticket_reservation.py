@@ -4,6 +4,8 @@ from rest_framework.response import Response
 import datetime
 from django.http import JsonResponse
 import redis
+import json
+from datetime import timedelta
 
 redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 
@@ -14,7 +16,6 @@ class ReserveTicketAPIView(APIView):
             return Response({"error": "Authentication credentials were not provided."}, status=401)
 
         user_id = user_info.get('user_id')
-        
         travel_id = request.data.get("travel_id")
 
         if not user_id or not travel_id:
@@ -35,7 +36,7 @@ class ReserveTicketAPIView(APIView):
             conn.begin()
 
             cursor.execute("""
-                SELECT remaining_capacity, total_capacity, transport_type 
+                SELECT remaining_capacity, total_capacity, transport_type, departure_time, price 
                 FROM Travel 
                 WHERE travel_id = %s FOR UPDATE
             """, (travel_id,))
@@ -44,6 +45,10 @@ class ReserveTicketAPIView(APIView):
             if not travel_info:
                 conn.rollback()
                 return Response({"error": "Travel not found"}, status=404)
+
+            if travel_info["departure_time"] < datetime.datetime.now():
+                conn.rollback()
+                return Response({"error": "This travel has already departed and cannot be reserved."}, status=400)
 
             if travel_info["remaining_capacity"] <= 0:
                 conn.rollback()
@@ -88,7 +93,7 @@ class ReserveTicketAPIView(APIView):
             new_ticket_id = cursor.lastrowid
 
             reservation_time = datetime.datetime.now()
-            expiration_time = reservation_time + datetime.timedelta(minutes=10)
+            expiration_time = reservation_time + timedelta(minutes=10)
 
             cursor.execute("""
                 INSERT INTO Reservation (user_id, ticket_id, status, reservation_time, expiration_time)
@@ -103,6 +108,18 @@ class ReserveTicketAPIView(APIView):
             """, (travel_id,))
 
             conn.commit()
+
+            try:
+                reservation_cache_data = {
+                    "status": "reserved",
+                    "user_id": user_id,
+                    "ticket_id": new_ticket_id,
+                    "price": travel_info["price"]
+                }
+                redis_key = f"reservation_details:{new_reservation_id}"
+                redis_client.setex(redis_key, timedelta(minutes=10), json.dumps(reservation_cache_data))
+            except redis.exceptions.RedisError as e:
+                pass
 
             return Response({
                 "message": "Ticket reserved successfully. Please complete the payment.",

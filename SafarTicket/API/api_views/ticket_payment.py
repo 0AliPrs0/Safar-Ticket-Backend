@@ -5,6 +5,7 @@ import datetime
 import redis
 import json
 from django.http import JsonResponse
+from datetime import timedelta
 
 redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 
@@ -13,19 +14,36 @@ class TicketPaymentAPIView(APIView):
         user_info = getattr(request, 'user_info', None)
         if not user_info:
             return Response({"error": "Authentication credentials were not provided."}, status=401)
-
-        user_id = user_info.get('user_id')
         
-        data = request.data
-        reservation_id = data.get('reservation_id')
-        payment_method = data.get('payment_method')
+        user_id = user_info.get('user_id')
+        reservation_id = request.data.get('reservation_id')
+        payment_method = request.data.get('payment_method')
 
-        if not all([user_id, reservation_id, payment_method]):
+        if not all([reservation_id, payment_method]):
             return Response({"error": "Missing required fields"}, status=400)
-
+        
         conn = None
         cursor = None
         try:
+            reservation_data = None
+            redis_key = f"reservation_details:{reservation_id}"
+            try:
+                cached_data = redis_client.get(redis_key)
+                if cached_data:
+                    reservation_data = json.loads(cached_data)
+                else:
+                    return Response({"error": "Reservation not found or has expired."}, status=404)
+            except redis.exceptions.RedisError as e:
+                return Response({"error": "Cache service is currently unavailable. Please try again later."}, status=503)
+
+            if reservation_data.get('user_id') != user_id:
+                return Response({"error": "This reservation does not belong to you."}, status=403)
+
+            if reservation_data.get('status') != 'reserved':
+                return Response({"error": "Reservation is not in a payable state."}, status=400)
+
+            amount = reservation_data.get('price')
+
             conn = MySQLdb.connect(
                 host="db",
                 user="root",
@@ -34,37 +52,13 @@ class TicketPaymentAPIView(APIView):
                 port=3306
             )
             cursor = conn.cursor(MySQLdb.cursors.DictCursor)
-
+            
             conn.begin()
-
-            cursor.execute("""
-                SELECT r.status, t.ticket_id, tr.price
-                FROM Reservation r
-                JOIN Ticket t ON r.ticket_id = t.ticket_id
-                JOIN Travel tr ON t.travel_id = tr.travel_id
-                WHERE r.reservation_id = %s AND r.user_id = %s
-            """, (reservation_id, user_id))
-            reservation = cursor.fetchone()
-
-            if not reservation:
-                conn.rollback()
-                return Response({"error": "Reservation not found"}, status=404)
-
-            status, ticket_id, amount = reservation["status"], reservation["ticket_id"], reservation["price"]
-
-            if status != 'reserved':
-                conn.rollback()
-                return Response({"error": "Reservation is not in a payable state"}, status=400)
 
             if payment_method == 'wallet':
                 cursor.execute("SELECT wallet FROM User WHERE user_id = %s FOR UPDATE", (user_id,))
                 wallet = cursor.fetchone()
-                if not wallet:
-                    conn.rollback()
-                    return Response({"error": "User not found"}, status=404)
-                
-                current_balance = wallet["wallet"]
-                if current_balance < amount:
+                if not wallet or wallet['wallet'] < amount:
                     conn.rollback()
                     return Response({"error": "Insufficient wallet balance"}, status=400)
 
@@ -81,7 +75,7 @@ class TicketPaymentAPIView(APIView):
 
             try:
                 redis_client.delete(f"user_profile:{user_id}")
-                redis_client.delete(f"reservation:{reservation_id}")
+                redis_client.delete(redis_key)
             except redis.exceptions.RedisError:
                 pass
 
