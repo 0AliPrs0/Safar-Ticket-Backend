@@ -9,6 +9,7 @@ from datetime import timedelta
 
 redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 
+
 class ReserveTicketAPIView(APIView):
     def post(self, request):
         user_info = getattr(request, 'user_info', None)
@@ -118,6 +119,14 @@ class ReserveTicketAPIView(APIView):
                 }
                 redis_key = f"reservation_details:{new_reservation_id}"
                 redis_client.setex(redis_key, timedelta(minutes=10), json.dumps(reservation_cache_data))
+                
+                travel_redis_key = f"travel_details:{travel_id}"
+                travel_cache_data = redis_client.get(travel_redis_key)
+                if travel_cache_data:
+                    travel_data = json.loads(travel_cache_data)
+                    travel_data['remaining_capacity'] -= 1
+                    redis_client.setex(travel_redis_key, timedelta(hours=1), json.dumps(travel_data))
+
             except redis.exceptions.RedisError as e:
                 pass
 

@@ -9,6 +9,7 @@ from datetime import timedelta
 
 redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 
+
 class TicketPaymentAPIView(APIView):
     def post(self, request):
         user_info = getattr(request, 'user_info', None)
@@ -22,28 +23,27 @@ class TicketPaymentAPIView(APIView):
         if not all([reservation_id, payment_method]):
             return Response({"error": "Missing required fields"}, status=400)
         
+        reservation_data = None
+        redis_key = f"reservation_details:{reservation_id}"
+        try:
+            cached_data = redis_client.get(redis_key)
+            if not cached_data:
+                return Response({"error": "Reservation not found or has expired."}, status=404)
+            reservation_data = json.loads(cached_data)
+        except redis.exceptions.RedisError as e:
+            return Response({"error": "Cache service is currently unavailable. Please try again later."}, status=503)
+
+        if reservation_data.get('user_id') != user_id:
+            return Response({"error": "This reservation does not belong to you."}, status=403)
+
+        if reservation_data.get('status') != 'reserved':
+            return Response({"error": "Reservation is not in a payable state."}, status=400)
+
+        amount = reservation_data.get('price')
+        
         conn = None
         cursor = None
         try:
-            reservation_data = None
-            redis_key = f"reservation_details:{reservation_id}"
-            try:
-                cached_data = redis_client.get(redis_key)
-                if cached_data:
-                    reservation_data = json.loads(cached_data)
-                else:
-                    return Response({"error": "Reservation not found or has expired."}, status=404)
-            except redis.exceptions.RedisError as e:
-                return Response({"error": "Cache service is currently unavailable. Please try again later."}, status=503)
-
-            if reservation_data.get('user_id') != user_id:
-                return Response({"error": "This reservation does not belong to you."}, status=403)
-
-            if reservation_data.get('status') != 'reserved':
-                return Response({"error": "Reservation is not in a payable state."}, status=400)
-
-            amount = reservation_data.get('price')
-
             conn = MySQLdb.connect(
                 host="db",
                 user="root",
@@ -57,8 +57,8 @@ class TicketPaymentAPIView(APIView):
 
             if payment_method == 'wallet':
                 cursor.execute("SELECT wallet FROM User WHERE user_id = %s FOR UPDATE", (user_id,))
-                wallet = cursor.fetchone()
-                if not wallet or wallet['wallet'] < amount:
+                wallet_info = cursor.fetchone()
+                if not wallet_info or wallet_info.get('wallet', 0) < amount:
                     conn.rollback()
                     return Response({"error": "Insufficient wallet balance"}, status=400)
 
@@ -74,10 +74,18 @@ class TicketPaymentAPIView(APIView):
             conn.commit()
 
             try:
-                redis_client.delete(f"user_profile:{user_id}")
                 redis_client.delete(redis_key)
             except redis.exceptions.RedisError:
                 pass
+
+            cursor.execute("SELECT email FROM User WHERE user_id = %s", (user_id,))
+            result = cursor.fetchone()
+            if result:
+                user_email = result[0]
+                try:
+                    send_payment_reminder_email(user_email, expiration)
+                except Exception:
+                    pass
 
             return Response({"message": "Payment completed and reservation confirmed."})
 
