@@ -73,8 +73,14 @@ class TicketReportAPIView(APIView):
 
 class AdminReviewReportAPIView(APIView):
     def post(self, request):
+
+        user_info = getattr(request, 'user_info', None)
+        if not user_info:
+            return Response({"error": "Authentication credentials were not provided."}, status=401)
+
+        admin_id = user_info.get('user_id')
+
         report_id = request.data.get("report_id")
-        admin_id = request.data.get("admin_id")
         response_text = request.data.get("response_text")
 
         if not report_id or not admin_id:

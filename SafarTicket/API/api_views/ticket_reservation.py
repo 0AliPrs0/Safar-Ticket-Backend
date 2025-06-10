@@ -126,7 +126,12 @@ class ReserveTicketAPIView(APIView):
 
 class UserReservationsAPIView(APIView):
     def get(self, request):
-        user_id = request.query_params.get('user_id')
+        user_info = getattr(request, 'user_info', None)
+        if not user_info:
+            return Response({"error": "Authentication credentials were not provided."}, status=401)
+
+        user_id = user_info.get('user_id')
+
         if not user_id:
             return Response({"error": "user_id is required."}, status=400)
 
@@ -144,7 +149,7 @@ class UserReservationsAPIView(APIView):
                        t.travel_id, t.seat_number
                 FROM Reservation r
                 JOIN Ticket t ON r.ticket_id = t.ticket_id
-                WHERE r.user_id = %s
+                WHERE r.user_id = %s AND r.status != 'canceled'
                 ORDER BY r.reservation_time DESC
             """, (user_id,))
             reservations = cursor.fetchall()
