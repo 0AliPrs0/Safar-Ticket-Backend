@@ -37,9 +37,14 @@ class ReserveTicketAPIView(APIView):
             conn.begin()
 
             cursor.execute("""
-                SELECT remaining_capacity, total_capacity, transport_type, departure_time, price 
-                FROM Travel 
-                WHERE travel_id = %s FOR UPDATE
+                SELECT tr.remaining_capacity, tr.total_capacity, tr.transport_type, tr.departure_time, tr.price,
+                       dep_city.city_name AS departure_city, dest_city.city_name AS destination_city
+                FROM Travel tr
+                JOIN Terminal dep_term ON tr.departure_terminal_id = dep_term.terminal_id
+                JOIN City dep_city ON dep_term.city_id = dep_city.city_id
+                JOIN Terminal dest_term ON tr.destination_terminal_id = dest_term.terminal_id
+                JOIN City dest_city ON dest_term.city_id = dest_city.city_id
+                WHERE tr.travel_id = %s FOR UPDATE
             """, (travel_id,))
             travel_info = cursor.fetchone()
 
@@ -125,7 +130,15 @@ class ReserveTicketAPIView(APIView):
                 if travel_cache_data:
                     travel_data = json.loads(travel_cache_data)
                     travel_data['remaining_capacity'] -= 1
-                    redis_client.setex(travel_redis_key, timedelta(hours=1), json.dumps(travel_data))
+                    redis_client.setex(travel_redis_key, timedelta(minutes=10), json.dumps(travel_data))
+
+                email_details = {
+                    "reservation_id": new_reservation_id,
+                    "departure_city": travel_info['departure_city'],
+                    "destination_city": travel_info['destination_city'],
+                    "departure_time": travel_info['departure_time'].strftime('%Y-%m-%d %H:%M')
+                }
+                send_payment_reminder_email(user_email, expiration_time, email_details)
 
             except redis.exceptions.RedisError as e:
                 pass
