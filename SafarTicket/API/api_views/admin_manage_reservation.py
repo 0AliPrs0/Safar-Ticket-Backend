@@ -3,22 +3,20 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 import datetime
 from datetime import datetime, timedelta
-from django.http import JsonResponse
-
 
 class AdminManageReservationAPIView(APIView):
     def post(self, request):
         user_info = getattr(request, 'user_info', None)
         if not user_info:
-            return JsonResponse({"error": "Authentication credentials were not provided."}, status=401)
+            return Response({"error": "Authentication credentials were not provided."}, status=401)
 
         admin_user_id = user_info.get('user_id')
         reservation_id = request.data.get("reservation_id")
         action = request.data.get("action")
         new_data = request.data.get("new_data", {})
 
-        if not all([admin_user_id, reservation_id, action]):
-            return Response({"error": "admin_id, reservation_id, and action are required"}, status=400)
+        if not all([reservation_id, action]):
+            return Response({"error": "reservation_id and action are required"}, status=400)
 
         conn = None
         cursor = None
@@ -36,9 +34,9 @@ class AdminManageReservationAPIView(APIView):
 
             cursor.execute("SELECT user_type FROM User WHERE user_id = %s", (admin_user_id,))
             result = cursor.fetchone()
-            if not result or result['user_type'] not in ['ADMIN', 'SUPPORT']:
+            if not result or result['user_type'] != 'ADMIN':
                 conn.rollback()
-                return Response({"error": "Only admins or support can perform this action"}, status=403)
+                return Response({"error": "Only admins can perform this action"}, status=403)
 
             cursor.execute("""
                 SELECT status, user_id, ticket_id FROM Reservation WHERE reservation_id = %s FOR UPDATE
@@ -48,13 +46,16 @@ class AdminManageReservationAPIView(APIView):
                 conn.rollback()
                 return Response({"error": "Reservation not found"}, status=404)
 
-            current_status, user_id, ticket_id = reservation['status'], reservation['user_id'], reservation['ticket_id']
+            current_status = reservation['status']
+            user_id = reservation['user_id']
+            ticket_id = reservation['ticket_id']
             next_status = current_status
 
             if action == "approve":
                 if current_status != 'reserved':
                     conn.rollback()
                     return Response({"error": "Only reserved reservations can be approved"}, status=400)
+                
                 cursor.execute("UPDATE Reservation SET status = 'paid' WHERE reservation_id = %s", (reservation_id,))
                 next_status = 'paid'
 
@@ -67,11 +68,13 @@ class AdminManageReservationAPIView(APIView):
                 travel = cursor.fetchone()
                 if not travel:
                     conn.rollback()
-                    return Response({"error": "Travel not found"}, status=404)
+                    return Response({"error": "Related travel not found for this ticket"}, status=404)
                 travel_id = travel['travel_id']
 
                 cursor.execute("UPDATE Reservation SET status = 'canceled' WHERE reservation_id = %s", (reservation_id,))
-                cursor.execute("UPDATE Travel SET remaining_capacity = remaining_capacity + 1 WHERE travel_id = %s", (travel_id,))
+                
+                if current_status != 'canceled':
+                    cursor.execute("UPDATE Travel SET remaining_capacity = remaining_capacity + 1 WHERE travel_id = %s", (travel_id,))
 
                 if current_status == 'paid':
                     cursor.execute("UPDATE Payment SET payment_status = 'failed' WHERE reservation_id = %s", (reservation_id,))
@@ -103,7 +106,7 @@ class AdminManageReservationAPIView(APIView):
 
             conn.commit()
 
-            return Response({"message": f"Reservation {action} successful"})
+            return Response({"message": f"Reservation action '{action}' performed successfully."})
 
         except MySQLdb.Error as e:
             if conn:
@@ -112,7 +115,7 @@ class AdminManageReservationAPIView(APIView):
         except Exception as e:
             if conn:
                 conn.rollback()
-            return Response({"error": str(e)}, status=500)
+            return Response({"error": f"An unexpected error occurred: {str(e)}"}, status=500)
         finally:
             if cursor:
                 cursor.close()
