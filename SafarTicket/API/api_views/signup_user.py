@@ -3,74 +3,63 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 import datetime
 import hashlib
-from ..utils.jwt import generate_access_token, generate_refresh_token, verify_jwt
+import re
+import random
+import json
+import redis
+from ..utils.email_utils import send_otp_email
+from datetime import timedelta
+
+redis_client = redis.Redis(host='redis', port=6379, db=0)
 
 class SignupUserAPIView(APIView):
+    def _is_password_strong(self, password):
+        if len(password) < 8: return False
+        if not re.search(r"[a-z]", password): return False
+        if not re.search(r"[A-Z]", password): return False
+        if not re.search(r"[0-9]", password): return False
+        if not re.search(r"[!@#$%^&*(),.?:{}|<>]", password): return False
+        return True
+
     def post(self, request):
         data = request.data
-        first_name = data.get('first_name')
-        last_name = data.get('last_name')
         email = data.get('email')
-        phone_number = data.get('phone_number')
         password = data.get('password')
-        city_name = data.get('city_name')
 
-        if not all([first_name, last_name, email, phone_number, password]):
-            return Response({'error': 'All main fields (first_name, last_name, email, phone_number, password) are required'}, status=400)
+        required_fields = ['first_name', 'last_name', 'email', 'phone_number', 'password']
+        errors = {}
+        for field in required_fields:
+            if not data.get(field):
+                errors[field] = f"{field.replace('_', ' ')} is required and cannot be empty."
+        if errors:
+            return Response({'errors': errors}, status=400)
 
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
-        registration_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if not self._is_password_strong(password):
+            return Response({'error': 'Password is not strong enough.'}, status=400)
 
-        db = None
+        conn = None
         cursor = None
         try:
-            db = MySQLdb.connect(
-                host="db",
-                user="root",
-                password="Aliprs2005",
-                database="safarticket",
-                port=3306
-            )
-            cursor = db.cursor()
-
-            city_id = 1
-            if city_name:
-                cursor.execute("SELECT city_id FROM City WHERE city_name = %s", (city_name,))
-                city_result = cursor.fetchone()
-                if city_result:
-                    city_id = city_result[0]
-                else:
-                    return Response({"error": f"City '{city_name}' not found. Please provide a valid city name."}, status=404)
-
+            conn = MySQLdb.connect(host="db", user="root", password="Aliprs2005", database="safarticket", port=3306)
+            cursor = conn.cursor()
+            
             cursor.execute("SELECT user_id FROM User WHERE email = %s", (email,))
             if cursor.fetchone():
                 return Response({'error': 'User with this email already exists'}, status=400)
 
-            cursor.execute("""
-                INSERT INTO User (first_name, last_name, email, phone_number, password_hash, user_type, city_id, registration_date, account_status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (first_name, last_name, email, phone_number, password_hash, "CUSTOMER", city_id, registration_date, "ACTIVE"))
-
-            db.commit()
-            user_id = cursor.lastrowid
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+            data['password_hash'] = password_hash
             
-            token = generate_jwt({'user_id': user_id, 'email': email})
+            user_data_json = json.dumps(data)
+            
+            otp = str(random.randint(100000, 999999))
+            
+            redis_client.setex(f"temp_user:{email}", timedelta(minutes=5), user_data_json)
+            redis_client.setex(f"signup_otp:{email}", timedelta(minutes=5), otp)
 
-            return Response({
-                'message': 'User registered successfully',
-                'token': token,
-                'user': {
-                    'user_id': user_id,
-                    'first_name': first_name,
-                    'last_name': last_name,
-                    'email': email,
-                    'phone_number': phone_number,
-                    'user_type': 'CUSTOMER',
-                    'city_id': city_id,
-                    'registration_date': registration_date,
-                    'account_status': 'ACTIVE'
-                }
-            }, status=201)
+            send_otp_email(email, otp)
+
+            return Response({'message': 'OTP sent to your email for account verification.'}, status=200)
 
         except MySQLdb.Error as e:
             return Response({'error': f"Database error: {str(e)}"}, status=500)
@@ -79,5 +68,5 @@ class SignupUserAPIView(APIView):
         finally:
             if cursor:
                 cursor.close()
-            if db:
-                db.close()
+            if conn:
+                conn.close()

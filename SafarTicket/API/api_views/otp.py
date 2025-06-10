@@ -1,42 +1,12 @@
 import MySQLdb
-from django.http import JsonResponse
-from django.views import View
-import random
-import redis 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from ..utils.email_utils import send_otp_email, send_payment_reminder_email 
-from ..serializers import UserSerializer 
 import datetime
-import hashlib 
-from ..utils.jwt import generate_access_token, generate_refresh_token, verify_jwt
-from rest_framework.permissions import IsAuthenticated
 import json
-from datetime import datetime, timedelta
-from rest_framework_simplejwt.tokens import RefreshToken
-from ..utils.jwt import generate_access_token, generate_refresh_token
+import redis
+
 
 redis_client = redis.Redis(host='redis', port=6379, db=0)
-        
-
-class SendOtpAPIView(APIView):
-    def post(self, request):
-        email = request.data.get('email')
-        if not email:
-            return JsonResponse({'error': 'Email is required'}, status=400)
-
-        otp = str(random.randint(100000, 999999))
-        redis_client.setex(f"otp:{email}", 300, otp)
-
-        try:
-            send_otp_email(email, otp)
-        except Exception:
-            return JsonResponse({'error': 'Failed to send email. Try again later.'}, status=500)
-
-        return JsonResponse({'message': 'OTP sent to your email'}, status=200)
-
-
-
 
 
 class VerifyOtpAPIView(APIView):
@@ -47,43 +17,59 @@ class VerifyOtpAPIView(APIView):
         if not email or not otp:
             return Response({'error': 'Email and OTP are required'}, status=400)
 
-        saved_otp_bytes = redis_client.get(f"otp:{email}")
-        if not saved_otp_bytes or saved_otp_bytes.decode() != otp:
-            return Response({'error': 'Invalid or expired OTP'}, status=400)
-        
-        redis_client.delete(f"otp:{email}")
+        otp_key = f"signup_otp:{email}"
+        user_data_key = f"temp_user:{email}"
 
+        saved_otp = redis_client.get(otp_key)
+        if not saved_otp or saved_otp != otp:
+            return Response({'error': 'Invalid or expired OTP'}, status=400)
+
+        temp_user_data_json = redis_client.get(user_data_key)
+        if not temp_user_data_json:
+            return Response({'error': 'Registration session expired. Please sign up again.'}, status=400)
+
+        temp_user_data = json.loads(temp_user_data_json)
+        
         conn = None
         cursor = None
         try:
-            conn = MySQLdb.connect(
-                host="db",
-                user="root",
-                password="Aliprs2005",
-                database="safarticket",
-                port=3306,
-                cursorclass=MySQLdb.cursors.DictCursor
-            )
+            conn = MySQLdb.connect(host="db", user="root", password="Aliprs2005", database="safarticket", port=3306)
             cursor = conn.cursor()
 
-            cursor.execute("SELECT user_id FROM User WHERE email = %s", (email,))
-            user_row = cursor.fetchone()
-
-            if not user_row:
-                return Response({"error": "User with this email does not exist. Please sign up first."}, status=404)
+            conn.begin()
             
-            user_id = user_row['user_id']
+            city_name = temp_user_data.get('city_name')
+            city_id = 1
+            if city_name:
+                cursor.execute("SELECT city_id FROM City WHERE city_name = %s", (city_name,))
+                city_result = cursor.fetchone()
+                if city_result:
+                    city_id = city_result[0]
 
-            access_token = generate_access_token(user_id, email)
-            refresh_token = generate_refresh_token(user_id)
+            cursor.execute("""
+                INSERT INTO User (first_name, last_name, email, phone_number, password_hash, user_type, city_id, registration_date, account_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                temp_user_data['first_name'], temp_user_data['last_name'], temp_user_data['email'],
+                temp_user_data['phone_number'], temp_user_data['password_hash'], 'CUSTOMER',
+                city_id, datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'ACTIVE'
+            ))
 
-            return Response({
-                'access': access_token,
-                'refresh': refresh_token
-            }, status=200)
+            conn.commit()
+
+            redis_client.delete(otp_key)
+            redis_client.delete(user_data_key)
+
+            return Response({'message': 'Account activated successfully. You can now log in.'}, status=201)
 
         except MySQLdb.Error as e:
-            return Response({"error": f"Database error: {str(e)}"}, status=500)
+            if conn:
+                conn.rollback()
+            return Response({'error': f"Database error: {str(e)}"}, status=500)
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            return Response({'error': str(e)}, status=500)
         finally:
             if cursor:
                 cursor.close()

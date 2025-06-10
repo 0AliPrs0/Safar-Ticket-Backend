@@ -9,7 +9,7 @@ def generate_access_token(user_id, email):
         'token_type': 'access',
         'user_id': user_id,
         'email': email,
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=60), 
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=360), 
         'iat': datetime.datetime.utcnow()
     }
     token = jwt.encode(payload, SECRET_KEY, algorithm='HS256')
@@ -19,7 +19,7 @@ def generate_refresh_token(user_id):
     payload = {
         'token_type': 'refresh',
         'user_id': user_id,
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=200), 
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=6000), 
         'iat': datetime.datetime.utcnow()
     }
     token = jwt.encode(payload, SECRET_KEY, algorithm='HS256')

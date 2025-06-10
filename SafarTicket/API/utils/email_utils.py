@@ -2,11 +2,28 @@ import smtplib
 from email.mime.text import MIMEText
 from django.conf import settings
 
-def send_otp_email(to_email, otp):
-    subject = "Your OTP Code"
-    body = f"Your OTP code is: {otp}. It will expire in 5 minutes."
+import smtplib
+from email.mime.text import MIMEText
+from django.conf import settings
 
-    msg = MIMEText(body)
+def send_otp_email(to_email, otp):
+    subject = "Your Verification Code"
+    frontend_url = getattr(settings, 'FRONTEND_BASE_URL', 'http://localhost:8000')
+    verification_link = f"{frontend_url}/api/verify-otp/?email={to_email}&otp={otp}"
+
+    body = f"""
+    <html>
+      <body>
+        <p>Your verification code is: <b>{otp}</b></p>
+        <p>This code will expire in 5 minutes.</p>
+        <p>Alternatively, you can click the link below to verify your account:</p>
+        <p><a href="{verification_link}">Verify Your Account</a></p>
+        <p>If you did not request this code, please ignore this email.</p>
+      </body>
+    </html>
+    """
+
+    msg = MIMEText(body, 'html')
     msg['Subject'] = subject
     msg['From'] = settings.EMAIL_HOST_USER
     msg['To'] = to_email
