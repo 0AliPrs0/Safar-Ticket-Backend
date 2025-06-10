@@ -33,13 +33,15 @@ class TicketDetailAPIView(APIView):
                 user="root",
                 password="Aliprs2005",
                 database="safarticket",
-                port=3306
+                port=3306,
+                cursorclass=MySQLdb.cursors.DictCursor 
             )
-            cursor = conn.cursor(MySQLdb.cursors.DictCursor)
+            cursor = conn.cursor()
 
             cursor.execute("""
                 SELECT 
                     t.ticket_id,
+                    t.seat_number, 
                     r.reservation_time,
                     c1.city_name AS departure_city,
                     tr.departure_time,
@@ -65,23 +67,24 @@ class TicketDetailAPIView(APIView):
                 return Response({"error": "Ticket not found"}, status=404)
 
             vehicle_id = ticket["vehicle_id"]
-            transport_type = ticket["vehicle_type"]
+            transport_type = ticket["vehicle_type"] 
 
             facilities = {}
+
             if transport_type == 'train':
                 cursor.execute("SELECT facilities FROM TrainDetail WHERE train_id = %s", (vehicle_id,))
                 result = cursor.fetchone()
-                if result and result["facilities"]:
+                if result and result.get("facilities"):
                     facilities = json.loads(result["facilities"])
             elif transport_type == 'bus':
                 cursor.execute("SELECT facilities FROM BusDetail WHERE bus_id = %s", (vehicle_id,))
                 result = cursor.fetchone()
-                if result and result["facilities"]:
+                if result and result.get("facilities"):
                     facilities = json.loads(result["facilities"])
             elif transport_type == 'flight':
                 cursor.execute("SELECT facilities FROM FlightDetail WHERE flight_id = %s", (vehicle_id,))
                 result = cursor.fetchone()
-                if result and result["facilities"]:
+                if result and result.get("facilities"):
                     facilities = json.loads(result["facilities"])
 
             cursor.close()
@@ -89,6 +92,7 @@ class TicketDetailAPIView(APIView):
 
             response_data = {
                 "ticket_id": ticket["ticket_id"],
+                "seat_number": ticket["seat_number"], 
                 "reservation_time": ticket["reservation_time"],
                 "departure_city": ticket["departure_city"],
                 "departure_time": ticket["departure_time"],

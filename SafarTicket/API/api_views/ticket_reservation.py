@@ -20,9 +20,10 @@ class ReserveTicketAPIView(APIView):
         user_id = user_info.get('user_id')
         user_email = user_info.get('email')
         travel_id = request.data.get("travel_id")
+        seat_number = request.data.get("seat_number")
 
-        if not user_id or not travel_id:
-            return Response({"error": "travel_id are required"}, status=400)
+        if not all([travel_id, seat_number]):
+            return Response({"error": "travel_id and seat_number are required"}, status=400)
 
         conn = None
         cursor = None
@@ -32,9 +33,10 @@ class ReserveTicketAPIView(APIView):
                 user="root",
                 password="Aliprs2005",
                 database="safarticket",
-                port=3306
+                port=3306,
+                cursorclass=MySQLdb.cursors.DictCursor
             )
-            cursor = conn.cursor(MySQLdb.cursors.DictCursor)
+            cursor = conn.cursor()
 
             conn.begin()
 
@@ -53,7 +55,7 @@ class ReserveTicketAPIView(APIView):
             if not travel_info:
                 conn.rollback()
                 return Response({"error": "Travel not found"}, status=404)
-
+            
             if travel_info["departure_time"] < datetime.datetime.now():
                 conn.rollback()
                 return Response({"error": "This travel has already departed and cannot be reserved."}, status=400)
@@ -61,6 +63,20 @@ class ReserveTicketAPIView(APIView):
             if travel_info["remaining_capacity"] <= 0:
                 conn.rollback()
                 return Response({"error": "No remaining capacity for this travel"}, status=400)
+
+            if not (1 <= int(seat_number) <= travel_info['total_capacity']):
+                conn.rollback()
+                return Response({"error": f"Invalid seat number. Must be between 1 and {travel_info['total_capacity']}."}, status=400)
+
+            cursor.execute("""
+                SELECT r.status FROM Reservation r
+                JOIN Ticket t ON r.ticket_id = t.ticket_id
+                WHERE t.travel_id = %s AND t.seat_number = %s AND r.status IN ('paid', 'reserved')
+            """, (travel_id, seat_number))
+            
+            if cursor.fetchone():
+                conn.rollback()
+                return Response({"error": f"Seat {seat_number} is already occupied."}, status=400)
 
             vehicle_id = None
             cursor.execute("SELECT vehicle_id FROM Ticket WHERE travel_id = %s LIMIT 1", (travel_id,))
@@ -70,10 +86,7 @@ class ReserveTicketAPIView(APIView):
                 vehicle_id = existing_ticket['vehicle_id']
             else:
                 transport_type = travel_info['transport_type']
-                if transport_type == 'plane':
-                    vehicle_type_in_detail = 'flight'
-                else:
-                    vehicle_type_in_detail = transport_type
+                vehicle_type_in_detail = 'flight' if transport_type == 'plane' else transport_type
                 
                 cursor.execute("SELECT vehicle_id FROM VehicleDetail WHERE vehicle_type = %s ORDER BY RAND() LIMIT 1", (vehicle_type_in_detail,))
                 
@@ -85,18 +98,10 @@ class ReserveTicketAPIView(APIView):
                 
                 vehicle_id = new_vehicle_assignment['vehicle_id']
 
-            cursor.execute("SELECT MAX(seat_number) FROM Ticket WHERE travel_id = %s", (travel_id,))
-            last_seat = cursor.fetchone()
-            new_seat_number = (last_seat['MAX(seat_number)'] or 0) + 1
-            
-            if new_seat_number > travel_info['total_capacity']:
-                conn.rollback()
-                return Response({"error": "Cannot assign seat, exceeds total capacity"}, status=500)
-
             cursor.execute("""
                 INSERT INTO Ticket (travel_id, vehicle_id, seat_number) 
                 VALUES (%s, %s, %s)
-            """, (travel_id, vehicle_id, new_seat_number))
+            """, (travel_id, vehicle_id, seat_number))
             
             new_ticket_id = cursor.lastrowid
 
@@ -110,13 +115,10 @@ class ReserveTicketAPIView(APIView):
             
             new_reservation_id = cursor.lastrowid
 
-            cursor.execute("""
-                UPDATE Travel SET remaining_capacity = remaining_capacity - 1 
-                WHERE travel_id = %s
-            """, (travel_id,))
+            cursor.execute("UPDATE Travel SET remaining_capacity = remaining_capacity - 1 WHERE travel_id = %s", (travel_id,))
 
             conn.commit()
-
+            
             try:
                 reservation_cache_data = {
                     "status": "reserved",
@@ -127,31 +129,21 @@ class ReserveTicketAPIView(APIView):
                 redis_key = f"reservation_details:{new_reservation_id}"
                 redis_client.setex(redis_key, timedelta(minutes=10), json.dumps(reservation_cache_data))
                 
-                travel_redis_key = f"travel_details:{travel_id}"
-                travel_cache_data = redis_client.get(travel_redis_key)
-                if travel_cache_data:
-                    travel_data = json.loads(travel_cache_data)
-                    travel_data['remaining_capacity'] -= 1
-                    redis_client.setex(travel_redis_key, timedelta(minutes=10), json.dumps(travel_data))
-
                 email_details = {
                     "reservation_id": new_reservation_id,
                     "departure_city": travel_info['departure_city'],
                     "destination_city": travel_info['destination_city'],
                     "departure_time": travel_info['departure_time'].strftime('%Y-%m-%d %H:%M')
                 }
-
-                    
                 send_payment_reminder_email(user_email, expiration_time, email_details)
-
-            except redis.exceptions.RedisError as e:
+            except redis.exceptions.RedisError:
                 pass
 
             return Response({
                 "message": "Ticket reserved successfully. Please complete the payment.",
                 "reservation_id": new_reservation_id,
                 "ticket_id": new_ticket_id,
-                "seat_number": new_seat_number,
+                "seat_number": seat_number,
                 "expires_at": expiration_time.isoformat()
             }, status=201)
 

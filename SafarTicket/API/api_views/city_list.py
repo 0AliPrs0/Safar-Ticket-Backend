@@ -1,6 +1,5 @@
 import MySQLdb
 from django.http import JsonResponse
-from django.views import View
 import random
 import redis 
 from rest_framework.views import APIView
@@ -17,7 +16,7 @@ from datetime import datetime, timedelta
 
 redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 
-class CityListView(View):
+class CityListView(APIView):
     def get(self, request):
         user_info = getattr(request, 'user_info', None)
         if not user_info:

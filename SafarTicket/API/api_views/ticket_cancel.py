@@ -56,7 +56,7 @@ class TicketCancelAPIView(APIView):
                 return Response({"error": "Ticket or related travel not found"}, status=404)
             travel_id = travel["travel_id"]
 
-            cursor.execute("SELECT user_id FROM User WHERE user_type = 'SUPPORT' ORDER BY RAND() LIMIT 1")
+            cursor.execute("SELECT user_id FROM User WHERE user_type = 'ADMIN' ORDER BY RAND() LIMIT 1")
             support_user = cursor.fetchone()
             if not support_user:
                 conn.rollback()
