@@ -3,8 +3,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 import redis
 import datetime
-from django.http import JsonResponse
-
+import json
+from datetime import timedelta
 
 redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 
@@ -73,7 +73,11 @@ class ProfileUserUpdateAPIView(APIView):
 
             redis_key = f"user_profile:{user_id}"
             try:
-                redis_client.delete(redis_key)
+                cursor.execute("SELECT * FROM User WHERE user_id = %s", (user_id,))
+                updated_user_data = cursor.fetchone()
+                if updated_user_data:
+                    user_profile_json = json.dumps(updated_user_data, default=str)
+                    redis_client.setex(redis_key, timedelta(seconds=300), user_profile_json)
             except redis.exceptions.RedisError:
                 pass
 
@@ -86,7 +90,7 @@ class ProfileUserUpdateAPIView(APIView):
         except Exception as e:
             if conn:
                 conn.rollback()
-            return Response({"error": str(e)}, status=500)
+            return Response({"error": f"An unexpected error occurred: {str(e)}"}, status=500)
         finally:
             if cursor:
                 cursor.close()
