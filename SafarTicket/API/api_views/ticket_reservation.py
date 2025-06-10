@@ -6,6 +6,7 @@ from django.http import JsonResponse
 import redis
 import json
 from datetime import timedelta
+from ..utils.email_utils import send_payment_reminder_email
 
 redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 
@@ -17,10 +18,11 @@ class ReserveTicketAPIView(APIView):
             return Response({"error": "Authentication credentials were not provided."}, status=401)
 
         user_id = user_info.get('user_id')
+        user_email = user_info.get('email')
         travel_id = request.data.get("travel_id")
 
         if not user_id or not travel_id:
-            return Response({"error": "user_id and travel_id are required"}, status=400)
+            return Response({"error": "travel_id are required"}, status=400)
 
         conn = None
         cursor = None
@@ -138,6 +140,8 @@ class ReserveTicketAPIView(APIView):
                     "destination_city": travel_info['destination_city'],
                     "departure_time": travel_info['departure_time'].strftime('%Y-%m-%d %H:%M')
                 }
+
+                    
                 send_payment_reminder_email(user_email, expiration_time, email_details)
 
             except redis.exceptions.RedisError as e:
@@ -156,6 +160,8 @@ class ReserveTicketAPIView(APIView):
                 conn.rollback()
             return Response({"error": f"Database transaction failed: {str(e)}"}, status=500)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             if conn:
                 conn.rollback()
             return Response({"error": f"An unexpected error occurred: {str(e)}"}, status=500)

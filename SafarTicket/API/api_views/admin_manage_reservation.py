@@ -15,6 +15,7 @@ class AdminManageReservationAPIView(APIView):
             return Response({"error": "Authentication credentials were not provided."}, status=401)
 
         admin_user_id = user_info.get('user_id')
+        
         reservation_id = request.data.get("reservation_id")
         action = request.data.get("action")
         new_data = request.data.get("new_data", {})

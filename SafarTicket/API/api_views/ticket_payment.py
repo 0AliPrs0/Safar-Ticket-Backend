@@ -78,15 +78,6 @@ class TicketPaymentAPIView(APIView):
             except redis.exceptions.RedisError:
                 pass
 
-            cursor.execute("SELECT email FROM User WHERE user_id = %s", (user_id,))
-            result = cursor.fetchone()
-            if result:
-                user_email = result[0]
-                try:
-                    send_payment_reminder_email(user_email, expiration)
-                except Exception:
-                    pass
-
             return Response({"message": "Payment completed and reservation confirmed."})
 
         except MySQLdb.Error as e:

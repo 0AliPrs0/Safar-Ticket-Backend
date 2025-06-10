@@ -36,7 +36,8 @@ def send_otp_email(to_email, otp):
 
 def send_payment_reminder_email(to_email, expiration_time, reservation_details):
     subject = "Payment Reminder for Your Ticket Reservation"
-    
+    frontend_url = getattr(settings, 'FRONTEND_BASE_URL', 'http://localhost:8000')
+    verification_link = f"{frontend_url}/api/payment-ticket/"
     formatted_expiration_time = expiration_time.strftime('%H:%M:%S on %Y-%m-%d')
 
     body = f"""
@@ -65,6 +66,7 @@ def send_payment_reminder_email(to_email, expiration_time, reservation_details):
             </ul>
             <p>Please complete the payment for your reservation before it expires.</p>
             <p>Your reservation is held until <span class="highlight">{formatted_expiration_time}</span>.</p>
+            <p><a href="{verification_link}">Pay Reservation</a></p>
             <p>If payment is not completed by this time, your reservation will be automatically cancelled.</p>
             <p>Thank you for choosing SafarTicket!</p>
           </div>
