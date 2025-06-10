@@ -7,7 +7,7 @@ import redis
 from datetime import timedelta
 from ..utils.jwt import generate_access_token, generate_refresh_token
 
-redis_client = redis.Redis(host='redis', port=6379, db=0)
+redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 
 class LoginAPIView(APIView):
     def post(self, request):

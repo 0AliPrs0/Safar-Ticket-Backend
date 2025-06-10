@@ -10,7 +10,7 @@ import redis
 from ..utils.email_utils import send_otp_email
 from datetime import timedelta
 
-redis_client = redis.Redis(host='redis', port=6379, db=0)
+redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 
 class SignupUserAPIView(APIView):
     def _is_password_strong(self, password):
