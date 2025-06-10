@@ -3,7 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 import datetime
 import hashlib
-from ..utils.jwt import generate_jwt
+from ..utils.jwt import generate_access_token, generate_refresh_token, verify_jwt
 
 class SignupUserAPIView(APIView):
     def post(self, request):

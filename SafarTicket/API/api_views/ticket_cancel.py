@@ -3,9 +3,15 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 import datetime
 from datetime import datetime, timedelta
+from django.http import JsonResponse
 
 class TicketCancelAPIView(APIView):
     def post(self, request):
+        user_info = getattr(request, 'user_info', None)
+        if not user_info:
+            return Response({"error": "Authentication credentials were not provided."}, status=401)
+
+        user_id = user_info.get('user_id')
         reservation_id = request.data.get("reservation_id")
 
         if not reservation_id:
@@ -26,7 +32,7 @@ class TicketCancelAPIView(APIView):
             conn.begin()
 
             cursor.execute("""
-                SELECT status, user_id, ticket_id FROM Reservation 
+                SELECT status, ticket_id FROM Reservation 
                 WHERE reservation_id = %s FOR UPDATE
             """, (reservation_id,))
             reservation = cursor.fetchone()
@@ -35,7 +41,7 @@ class TicketCancelAPIView(APIView):
                 conn.rollback()
                 return Response({"error": "Reservation not found"}, status=404)
 
-            status, user_id, ticket_id = reservation["status"], reservation["user_id"], reservation["ticket_id"]
+            status, ticket_id = reservation["status"], reservation["ticket_id"]
             if status != 'paid':
                 conn.rollback()
                 return Response({"error": "Only paid reservations can be canceled by the user"}, status=400)

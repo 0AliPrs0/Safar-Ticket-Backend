@@ -11,11 +11,14 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
 from pathlib import Path
+from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'your-secret-key'
+SECRET_KEY = os.getenv('SECRET_KEY', 'fallback-secret-key')
+
 DEBUG = True
+
 ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
@@ -38,6 +41,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'API.middleware.JWTMiddleware',
 ]
 
 ROOT_URLCONF = 'SafarTicket.urls'
@@ -71,11 +75,6 @@ DATABASES = {
     }
 }
 
-JWT_SECRET = 'your-secret-key'
-JWT_ALGORITHM = 'HS256'
-JWT_EXP_DELTA_SECONDS = 3600
-
-
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
@@ -86,8 +85,17 @@ CACHES = {
     }
 }
 
-JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'fallback_secret')
+# REST_FRAMEWORK = {
+#     'DEFAULT_AUTHENTICATION_CLASSES': (
+#         'rest_framework_simplejwt.authentication.JWTAuthentication',
+#     ),
+# }
 
+# SIMPLE_JWT = {
+#     "ACCESS_TOKEN_LIFETIME": timedelta(seconds=60),
+#     "REFRESH_TOKEN_LIFETIME": timedelta(seconds=240),
+#     "SIGNING_KEY": os.environ.get('JWT_SECRET_KEY'),
+# }
 
 AUTH_PASSWORD_VALIDATORS = []
 
@@ -100,17 +108,9 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_USER')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_PASS')
-
-
-# REST_FRAMEWORK = {
-#     'DEFAULT_AUTHENTICATION_CLASSES': (
-#         'rest_framework_simplejwt.authentication.JWTAuthentication',
-#     ),
-# }

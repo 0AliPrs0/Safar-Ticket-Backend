@@ -12,6 +12,8 @@ from .api_views.admin_manage_reservation import AdminManageReservationAPIView
 from .api_views.ticket_report import TicketReportAPIView, AdminReviewReportAPIView
 from .api_views.ticket_reservation import UserReservationsAPIView, ReserveTicketAPIView
 from .api_views.penalty_check import PenaltyCheckAPIView
+from .api_views.token_views import RefreshTokenAPIView
+
 
 
 urlpatterns = [
@@ -31,4 +33,5 @@ urlpatterns = [
     path('reserve-ticket/', ReserveTicketAPIView.as_view()),
     path('reservation/', UserReservationsAPIView.as_view()),
     path('check-penalty/', PenaltyCheckAPIView.as_view()),
+    path('refresh-token/', RefreshTokenAPIView.as_view(), name='token_refresh'),
 ]

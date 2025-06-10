@@ -9,11 +9,12 @@ from ..utils.email_utils import send_otp_email, send_payment_reminder_email
 from ..serializers import UserSerializer 
 import datetime
 import hashlib 
-from ..utils.jwt import generate_jwt 
+from ..utils.jwt import generate_access_token, generate_refresh_token, verify_jwt
 from rest_framework.permissions import IsAuthenticated
 import json
-from datetime import datetime, timedelta 
-
+from datetime import datetime, timedelta
+from rest_framework_simplejwt.tokens import RefreshToken
+from ..utils.jwt import generate_access_token, generate_refresh_token
 
 redis_client = redis.Redis(host='redis', port=6379, db=0)
         
@@ -22,7 +23,7 @@ class SendOtpAPIView(APIView):
     def post(self, request):
         email = request.data.get('email')
         if not email:
-            return Response({'error': 'Email is required'}, status=400)
+            return JsonResponse({'error': 'Email is required'}, status=400)
 
         otp = str(random.randint(100000, 999999))
         redis_client.setex(f"otp:{email}", 300, otp)
@@ -30,9 +31,11 @@ class SendOtpAPIView(APIView):
         try:
             send_otp_email(email, otp)
         except Exception:
-            return Response({'error': 'Failed to send email. Try again later.'}, status=500)
+            return JsonResponse({'error': 'Failed to send email. Try again later.'}, status=500)
 
-        return Response({'message': 'OTP sent to your email'}, status=200)
+        return JsonResponse({'message': 'OTP sent to your email'}, status=200)
+
+
 
 
 
@@ -44,61 +47,45 @@ class VerifyOtpAPIView(APIView):
         if not email or not otp:
             return Response({'error': 'Email and OTP are required'}, status=400)
 
-        saved_otp = redis_client.get(f"otp:{email}")
-        if not saved_otp or saved_otp.decode() != otp:
+        saved_otp_bytes = redis_client.get(f"otp:{email}")
+        if not saved_otp_bytes or saved_otp_bytes.decode() != otp:
             return Response({'error': 'Invalid or expired OTP'}, status=400)
+        
+        redis_client.delete(f"otp:{email}")
 
-        conn = MySQLdb.connect(
-            host="db",
-            user="root",
-            password="Aliprs2005",
-            database="safarticket",
-            port=3306
-        )
-        cursor = conn.cursor()
+        conn = None
+        cursor = None
+        try:
+            conn = MySQLdb.connect(
+                host="db",
+                user="root",
+                password="Aliprs2005",
+                database="safarticket",
+                port=3306,
+                cursorclass=MySQLdb.cursors.DictCursor
+            )
+            cursor = conn.cursor()
 
-        cursor.execute("SELECT user_id, first_name, last_name, email, phone_number, user_type, city_id, registration_date, account_status FROM User WHERE email = %s", (email,))
-        row = cursor.fetchone()
+            cursor.execute("SELECT user_id FROM User WHERE email = %s", (email,))
+            user_row = cursor.fetchone()
 
-        if not row:
-            registration_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            cursor.execute("""
-                INSERT INTO User (first_name, last_name, email, user_type, city_id, registration_date, account_status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, ("", "", email, "customer", 1, registration_date, "active"))
-            conn.commit()
-            user_id = cursor.lastrowid
-            user_data = {
-                "user_id": user_id,
-                "first_name": "",
-                "last_name": "",
-                "email": email,
-                "phone_number": None,
-                "user_type": "customer",
-                "city_id": 1,
-                "registration_date": registration_date,
-                "account_status": "active"
-            }
-        else:
-            user_data = {
-                "user_id": row[0],
-                "first_name": row[1],
-                "last_name": row[2],
-                "email": row[3],
-                "phone_number": row[4],
-                "user_type": row[5],
-                "city_id": row[6],
-                "registration_date": row[7],
-                "account_status": row[8]
-            }
+            if not user_row:
+                return Response({"error": "User with this email does not exist. Please sign up first."}, status=404)
+            
+            user_id = user_row['user_id']
 
-        cursor.close()
-        conn.close()
+            access_token = generate_access_token(user_id, email)
+            refresh_token = generate_refresh_token(user_id)
 
-        token = generate_jwt({'user_id': user_data['user_id'], 'email': user_data['email']})
-        serializer = UserSerializer(user_data)
+            return Response({
+                'access': access_token,
+                'refresh': refresh_token
+            }, status=200)
 
-        return Response({
-            'token': token,
-            'user': serializer.data
-        }, status=200)
+        except MySQLdb.Error as e:
+            return Response({"error": f"Database error: {str(e)}"}, status=500)
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()

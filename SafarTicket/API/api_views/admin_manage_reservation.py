@@ -3,10 +3,16 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 import datetime
 from datetime import datetime, timedelta
+from django.http import JsonResponse
+
 
 class AdminManageReservationAPIView(APIView):
     def post(self, request):
-        admin_user_id = request.data.get("admin_id")
+        user_info = getattr(request, 'user_info', None)
+        if not user_info:
+            return JsonResponse({"error": "Authentication credentials were not provided."}, status=401)
+
+        admin_user_id = user_info.get('user_id')
         reservation_id = request.data.get("reservation_id")
         action = request.data.get("action")
         new_data = request.data.get("new_data", {})

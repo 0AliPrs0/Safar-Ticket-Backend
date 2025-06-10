@@ -9,7 +9,7 @@ from ..utils.email_utils import send_otp_email, send_payment_reminder_email
 from ..serializers import UserSerializer 
 import datetime
 import hashlib 
-from ..utils.jwt import generate_jwt 
+from ..utils.jwt import generate_access_token, generate_refresh_token, verify_jwt
 from rest_framework.permissions import IsAuthenticated
 import json
 from datetime import datetime, timedelta 
@@ -19,6 +19,10 @@ redis_client = redis.Redis(host='redis', port=6379, db=0)
 
 class CityListView(View):
     def get(self, request):
+        user_info = getattr(request, 'user_info', None)
+        if not user_info:
+            return JsonResponse({"error": "Authentication credentials were not provided."}, status=401)
+
         try:
             db = MySQLdb.connect(
                 host="db",

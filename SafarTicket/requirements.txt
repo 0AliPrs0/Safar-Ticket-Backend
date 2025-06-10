@@ -6,3 +6,4 @@ PyJWT
 django-redis
 cryptography>=3.0
 mysql-connector-python
+djangorestframework-simplejwt

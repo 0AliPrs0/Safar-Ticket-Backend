@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   db:
     image: mysql:8.0
@@ -5,16 +7,16 @@ services:
       MYSQL_DATABASE: safarticket
       MYSQL_ROOT_PASSWORD: Aliprs2005
     ports:
-      - "3306:3306" 
+      - "3306:3306"
     volumes:
-      - db_data:/var/lib/mysql 
+      - db_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "-u", "root", "-pAliprs2005"]
-      interval: 10s     
-      timeout: 5s      
-      retries: 10        
-      start_period: 30s  
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pAliprs2005"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   redis:
     image: redis:latest
@@ -22,28 +24,29 @@ services:
       - "6379:6379"
 
   backend:
-    build: ./SafarTicket 
-    command: python manage.py runserver 0.0.0.0:8000 
+    build: ./SafarTicket
+    command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - ./SafarTicket:/code
     ports:
-      - "8000:8000" 
+      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
-      redis: 
+      redis:
         condition: service_started
     dns:
       - 8.8.8.8
       - 1.1.1.1
     environment:
+      - DJANGO_SETTINGS_MODULE=SafarTicket.settings
+      - JWT_SECRET_KEY=jsd8@wF8#Lxq2kPmZ3!vQ1eL*Gd94Tpw
+      - SECRET_KEY=some-very-secret-key
       - EMAIL_USER=safarticket00@gmail.com
       - EMAIL_PASS=jgtivimugkolefyi
-      - DJANGO_SETTINGS_MODULE=SafarTicket.settings
-      - JWT_SECRET_KEY=JWT_SECRET_KEY=jsd8@wF8#Lxq2kPmZ3!vQ1eL*Gd94Tpw
 
   cron:
-    build: ./SafarTicket  
+    build: ./SafarTicket
     command: >
       sh -c "crontab /code/cron/cronjob && cron -f"
     volumes:
@@ -54,6 +57,5 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=SafarTicket.settings
 
-
 volumes:
-  db_data: 
+  db_data:

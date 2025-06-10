@@ -2,10 +2,16 @@ import MySQLdb
 from rest_framework.views import APIView
 from rest_framework.response import Response
 import datetime
+from django.http import JsonResponse
 
 class ReserveTicketAPIView(APIView):
     def post(self, request):
-        user_id = request.data.get("user_id")
+        user_info = getattr(request, 'user_info', None)
+        if not user_info:
+            return Response({"error": "Authentication credentials were not provided."}, status=401)
+
+        user_id = user_info.get('user_id')
+        
         travel_id = request.data.get("travel_id")
 
         if not user_id or not travel_id:

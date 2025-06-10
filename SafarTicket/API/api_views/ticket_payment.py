@@ -4,13 +4,19 @@ from rest_framework.response import Response
 import datetime
 import redis
 import json
+from django.http import JsonResponse
 
 redis_client = redis.Redis(host='redis', port=6379, db=0)
 
 class TicketPaymentAPIView(APIView):
     def post(self, request):
+        user_info = getattr(request, 'user_info', None)
+        if not user_info:
+            return Response({"error": "Authentication credentials were not provided."}, status=401)
+
+        user_id = user_info.get('user_id')
+        
         data = request.data
-        user_id = data.get('user_id')
         reservation_id = data.get('reservation_id')
         payment_method = data.get('payment_method')
 
