@@ -5,7 +5,6 @@ import datetime
 import redis
 import json
 from datetime import datetime, timedelta
-from django.http import JsonResponse
 
 redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 
@@ -17,8 +16,8 @@ class SearchTicketsAPIView(APIView):
             return Response({"error": "Authentication credentials were not provided."}, status=401)
 
         data = request.data
-        origin_city_name = data.get('origin_city_name')
-        destination_city_name = data.get('destination_city_name')
+        origin_city_name = data.get('origin_city')
+        destination_city_name = data.get('destination_city')
         travel_date_str = data.get('travel_date')
 
         transport_type = data.get('transport_type')

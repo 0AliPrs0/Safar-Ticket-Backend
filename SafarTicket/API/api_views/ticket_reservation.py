@@ -2,7 +2,6 @@ import MySQLdb
 from rest_framework.views import APIView
 from rest_framework.response import Response
 import datetime
-from django.http import JsonResponse
 import redis
 import json
 from datetime import timedelta

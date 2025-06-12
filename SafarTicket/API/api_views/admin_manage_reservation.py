@@ -1,7 +1,6 @@
 import MySQLdb
 from rest_framework.views import APIView
 from rest_framework.response import Response
-import datetime
 from datetime import datetime, timedelta
 import redis
 
@@ -15,7 +14,6 @@ class AdminManageReservationAPIView(APIView):
             return Response({"error": "Authentication credentials were not provided."}, status=401)
 
         admin_user_id = user_info.get('user_id')
-        
         reservation_id = request.data.get("reservation_id")
         action = request.data.get("action")
         new_data = request.data.get("new_data", {})
@@ -34,7 +32,6 @@ class AdminManageReservationAPIView(APIView):
                 port=3306
             )
             cursor = conn.cursor(MySQLdb.cursors.DictCursor)
-
             conn.begin()
 
             cursor.execute("SELECT user_type FROM User WHERE user_id = %s", (admin_user_id,))
@@ -44,7 +41,8 @@ class AdminManageReservationAPIView(APIView):
                 return Response({"error": "Only admins can perform this action"}, status=403)
 
             cursor.execute("""
-                SELECT status, user_id, ticket_id FROM Reservation WHERE reservation_id = %s FOR UPDATE
+                SELECT status, user_id, ticket_id FROM Reservation 
+                WHERE reservation_id = %s FOR UPDATE
             """, (reservation_id,))
             reservation = cursor.fetchone()
             if not reservation:
@@ -76,14 +74,39 @@ class AdminManageReservationAPIView(APIView):
                     return Response({"error": "Related travel not found for this ticket"}, status=404)
                 travel_id = travel['travel_id']
 
-                cursor.execute("UPDATE Reservation SET status = 'canceled' WHERE reservation_id = %s", (reservation_id,))
-                
-                if current_status != 'canceled':
-                    cursor.execute("UPDATE Travel SET remaining_capacity = remaining_capacity + 1 WHERE travel_id = %s", (travel_id,))
-
                 if current_status == 'paid':
+                    cursor.execute("""
+                        SELECT tr.departure_time, p.amount 
+                        FROM Travel tr
+                        LEFT JOIN Payment p ON p.reservation_id = %s
+                        WHERE tr.travel_id = %s
+                    """, (reservation_id, travel_id))
+                    travel_info = cursor.fetchone()
+
+                    if not travel_info:
+                        conn.rollback()
+                        return Response({"error": "Travel or Payment data not found"}, status=404)
+
+                    departure_time, amount_paid = travel_info["departure_time"], travel_info["amount"]
+
+                    now = datetime.now()
+                    remaining_time = departure_time - now
+
+                    if remaining_time <= timedelta(hours=1):
+                        penalty_percent = 90
+                    elif remaining_time <= timedelta(hours=3):
+                        penalty_percent = 50
+                    else:
+                        penalty_percent = 10
+
+                    penalty_amount = round(float(amount_paid) * penalty_percent / 100)
+                    refund_amount = float(amount_paid) - penalty_amount
+
+                    cursor.execute("UPDATE User SET wallet = wallet + %s WHERE user_id = %s", (refund_amount, user_id))
                     cursor.execute("UPDATE Payment SET payment_status = 'failed' WHERE reservation_id = %s", (reservation_id,))
-                
+
+                cursor.execute("UPDATE Reservation SET status = 'canceled' WHERE reservation_id = %s", (reservation_id,))
+                cursor.execute("UPDATE Travel SET remaining_capacity = remaining_capacity + 1 WHERE travel_id = %s", (travel_id,))
                 next_status = 'canceled'
 
             elif action == "modify":

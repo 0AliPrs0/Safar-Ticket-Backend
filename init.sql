@@ -168,7 +168,7 @@
         FOREIGN KEY (ticket_id) REFERENCES Ticket(ticket_id) ON DELETE CASCADE
     );
 
-    ALTER TABLE User ADD COLUMN report_response TEXT;
+    ALTER TABLE Report ADD COLUMN report_response TEXT;
 
     CREATE TABLE ReservationChange (
         reservation_change_id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -253,7 +253,7 @@
 
     INSERT INTO User (first_name, last_name, email, phone_number, user_type, city_id, password_hash, registration_date, account_status)
     VALUES
-    ('admin', 'admin', 'admin@gmail.com', '0000000000', 'ADMIN', 1, 'hashed_password_0', NOW(), 'ACTIVE'),
+    ('admin', 'admin', 'admin@gmail.com', '0000000000', 'ADMIN', 1, '851aa83d4842d4595551a90421b030904f848b5002da05260195a59ecfb56b30', NOW(), 'ACTIVE'),
     ('John', 'Doe', 'john.doe@example.com', '1234567890', 'CUSTOMER', 12, 'hashed_password_1', NOW(), 'ACTIVE'),
     ('Alice', 'Smith', 'alice.smith@example.com', '2345678901', 'ADMIN', 14, 'hashed_password_2', NOW(), 'ACTIVE'),
     ('Bob', 'Brown', 'bob.brown@example.com', '3456789012', 'ADMIN', 16, 'hashed_password_3', NOW(), 'ACTIVE'),

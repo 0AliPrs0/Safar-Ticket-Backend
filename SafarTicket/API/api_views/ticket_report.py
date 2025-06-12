@@ -1,19 +1,8 @@
 import MySQLdb
-from django.http import JsonResponse
-from django.views import View
-import random
 import redis 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from ..utils.email_utils import send_otp_email, send_payment_reminder_email 
-from ..serializers import UserSerializer 
 import datetime
-import hashlib 
-from ..utils.jwt import generate_access_token, generate_refresh_token, verify_jwt
-from rest_framework.permissions import IsAuthenticated
-import json
-from datetime import datetime, timedelta 
-from django.http import JsonResponse
 
 
 redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
@@ -80,10 +69,10 @@ class AdminReviewReportAPIView(APIView):
         admin_id = user_info.get('user_id')
 
         report_id = request.data.get("report_id")
-        response_text = request.data.get("response_text")
+        response_text = request.data.get("report_response")
 
-        if not report_id or not admin_id:
-            return Response({"error": "report_id and admin_id are required"}, status=400)
+        if not report_id:
+            return Response({"error": "report_id are required"}, status=400)
         if not response_text:
             return Response({"error": "response_text is required"}, status=400)
 
@@ -112,7 +101,7 @@ class AdminReviewReportAPIView(APIView):
             cursor.execute("""
                 UPDATE Report
                 SET status = 'reviewed',
-                    response_text = %s
+                    report_response = %s
                 WHERE report_id = %s
             """, (response_text, report_id))
 

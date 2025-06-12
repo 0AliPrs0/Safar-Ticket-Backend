@@ -3,7 +3,6 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 import datetime
 from datetime import datetime, timedelta
-from django.http import JsonResponse
 import redis
 
 redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)

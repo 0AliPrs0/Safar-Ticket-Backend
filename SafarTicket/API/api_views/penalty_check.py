@@ -1,17 +1,8 @@
 import MySQLdb
-from django.http import JsonResponse
-from django.views import View
-import random
 import redis 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from ..utils.email_utils import send_otp_email, send_payment_reminder_email 
-from ..serializers import UserSerializer 
 import datetime
-import hashlib 
-from ..utils.jwt import generate_access_token, generate_refresh_token, verify_jwt
-from rest_framework.permissions import IsAuthenticated
-import json
 from datetime import datetime, timedelta 
 
 
