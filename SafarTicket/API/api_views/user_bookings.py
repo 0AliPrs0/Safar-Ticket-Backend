@@ -8,8 +8,6 @@ import datetime
 redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 
 
-
-
 class UserBookingsAPIView(APIView):
     def get(self, request):
         user_info = getattr(request, 'user_info', None)
@@ -52,7 +50,7 @@ class UserBookingsAPIView(APIView):
 
             params = [user_id]
 
-            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             if status_filter == "future":
                 base_query += " AND r.status = 'paid' AND tr.departure_time > %s"
                 params.append(now_str)

@@ -45,7 +45,7 @@ class TicketReportAPIView(APIView):
                 INSERT INTO Report (user_id, ticket_id, report_category, report_text, status, report_time)
                 VALUES (%s, %s, %s, %s, 'pending', %s)
             """, (
-                user_id, ticket_id, report_category, report_text, datetime.now()
+                user_id, ticket_id, report_category, report_text, datetime.datetime.now()
             ))
 
             conn.commit()
